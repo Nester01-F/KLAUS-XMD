@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="https://files.catbox.moe/t01dvk.jpg" alt="KLAUS XMD Banner" width="100%"/>
+<img src="https://files.catbox.moe/ndm2q0.jpg" alt="KLAUS XMD Banner" width="100%"/>
 
 # ⚡ KLAUS XMD ⚡
 
