@@ -1,4 +1,3 @@
-cat > plugins/settings.js << 'EOF'
 const { getGroup, setGroup, getUser, setUser, getDB } = require('../lib/database');
 
 module.exports = [

@@ -1,4 +1,3 @@
-cat > plugins/search.js << 'EOF'
 const axios = require('axios');
 const cheerio = require('cheerio');
 

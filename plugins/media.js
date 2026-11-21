@@ -1,4 +1,3 @@
-cat > plugins/media.js << 'EOF'
 const { getBuffer } = require('../lib/helper');
 
 module.exports = [

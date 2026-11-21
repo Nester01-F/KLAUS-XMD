@@ -1,4 +1,3 @@
-cat > plugins/info.js << 'EOF'
 const { getDB, getUser } = require('../lib/database');
 const moment = require('moment-timezone');
 

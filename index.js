@@ -1,4 +1,3 @@
-cat > index.js << 'EOF'
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -205,5 +204,3 @@ fs.watch(path.join(__dirname, 'plugins'), (evt, file) => {
     loadPlugins();
   }
 });
-EOF
-echo "✅ index.js updated with automation wired"

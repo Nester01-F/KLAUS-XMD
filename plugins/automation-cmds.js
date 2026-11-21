@@ -1,4 +1,3 @@
-cat > plugins/automation-cmds.js << 'EOF'
 const { getBot, setBot } = require('../lib/database');
 const { startAutoBio, stopAutoBio } = require('../lib/automation');
 

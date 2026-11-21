@@ -1,4 +1,3 @@
-cat > plugins/utility-more.js << 'EOF'
 const moment = require('moment-timezone');
 const { getUser, setUser } = require('../lib/database');
 

@@ -1,4 +1,3 @@
-cat > plugins/extra-fun.js << 'EOF'
 const axios = require('axios');
 
 module.exports = [

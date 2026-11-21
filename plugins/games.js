@@ -1,4 +1,3 @@
-cat > plugins/games.js << 'EOF'
 const activeGames = new Map();
 
 module.exports = [

@@ -1,4 +1,3 @@
-cat > plugins/admin-extra.js << 'EOF'
 const { getGroup, setGroup, addWarning } = require('../lib/database');
 
 module.exports = [
