@@ -89,5 +89,3 @@ module.exports = [
     }
   }
 ];
-EOF
-echo "✅ plugins/info.js created"

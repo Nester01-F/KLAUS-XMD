@@ -82,5 +82,3 @@ module.exports = [
     }
   }
 ];
-EOF
-echo "✅ plugins/media.js created"

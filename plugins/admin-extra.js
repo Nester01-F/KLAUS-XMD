@@ -78,5 +78,3 @@ module.exports = [
     }
   }
 ];
-EOF
-echo "✅ plugins/admin-extra.js created"

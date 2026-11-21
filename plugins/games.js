@@ -65,5 +65,3 @@ module.exports.handleGameAnswer = function(from, text) {
   }
   return null;
 };
-EOF
-echo "✅ plugins/games.js created"

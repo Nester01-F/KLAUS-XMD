@@ -114,5 +114,3 @@ module.exports = [
     }
   }
 ];
-EOF
-echo "✅ plugins/settings.js created"

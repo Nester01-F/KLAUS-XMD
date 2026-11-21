@@ -52,5 +52,3 @@ module.exports = [
     }
   }
 ];
-EOF
-echo "✅ plugins/search.js created"

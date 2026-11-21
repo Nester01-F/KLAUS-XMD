@@ -1,3 +1,4 @@
+cat > index.js << 'EOF'
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -19,6 +20,10 @@ const { loadDB, bumpStat } = require('./lib/database');
 const { guardMessage } = require('./lib/guard');
 const { handleGroupParticipants } = require('./lib/events');
 const { restoreSession, exportSession } = require('./lib/session');
+const {
+  autoViewStatus, autoReactCommand, autoRead, autoTyping,
+  startAutoBio, autoBlockCheck
+} = require('./lib/automation');
 
 const plugins = new Map();
 
@@ -40,7 +45,7 @@ function loadPlugins() {
   logger.info(`Total commands: ${plugins.size}`);
 }
 
-/* ---------- Readline for pairing ---------- */
+/* ---------- Readline ---------- */
 function question(text) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise(res => rl.question(text, ans => { rl.close(); res(ans.trim()); }));
@@ -48,14 +53,12 @@ function question(text) {
 
 /* ---------- Start bot ---------- */
 async function startBot() {
-  // ✅ Ensure session folder exists
   const sessionPath = path.join(__dirname, config.sessionName);
   if (!fs.existsSync(sessionPath)) {
     fs.mkdirSync(sessionPath, { recursive: true });
     logger.info(`📁 Created session folder: ${sessionPath}`);
   }
 
-  // ✅ Restore session from SESSION_ID env (Heroku / Railway / Render)
   restoreSession();
 
   const { state, saveCreds } = await useMultiFileAuthState(config.sessionName);
@@ -73,7 +76,6 @@ async function startBot() {
     generateHighQualityLinkPreview: true
   });
 
-  /* ---------- Pairing code ---------- */
   if (!sock.authState.creds.registered) {
     const method = await question('Login method? (1 = QR, 2 = Pairing Code): ');
     if (method === '2') {
@@ -89,7 +91,17 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  /* ---------- Group participants (welcome / goodbye) ---------- */
+  /* ---------- 👁️ STATUS AUTOMATION ---------- */
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+    for (const msg of messages) {
+      if (msg.key.remoteJid === 'status@broadcast') {
+        await autoViewStatus(sock, [msg]);
+      }
+    }
+  });
+
+  /* ---------- Group participants ---------- */
   sock.ev.on('group-participants.update', (update) =>
     handleGroupParticipants({ sock, update })
       .catch(e => logger.error('GP update: ' + e.message))
@@ -107,9 +119,8 @@ async function startBot() {
         image: { url: config.images.alive },
         caption: `✅ *${config.botName} is ONLINE!*\n\nPrefix: \`${config.prefix}\`\nType ${config.prefix}menu`
       }).catch(() => {});
-
-      // ✅ Export session to Base64 (for SESSION_ID env on hosts)
       setTimeout(() => exportSession(), 2000);
+      startAutoBio(sock);
     }
     if (connection === 'close') {
       const code = new Boom(lastDisconnect?.error)?.output?.statusCode;
@@ -133,23 +144,24 @@ async function startBot() {
     const sender = jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
     const isGroup = from.endsWith('@g.us');
 
+    // 📖 AutoRead
+    await autoRead(sock, msg);
+
+    // 🛡️ AutoBlock
+    await autoBlockCheck(sock, sender);
+
     const body =
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text ||
       msg.message.imageMessage?.caption ||
       msg.message.videoMessage?.caption || '';
 
-    /* ---------- 🛡️ Guard: antilink + antispam ---------- */
+    // 🛡️ Guard
     try {
-      const handled = await guardMessage({
-        sock, msg, from, sender, text: body
-      });
+      const handled = await guardMessage({ sock, msg, from, sender, text: body });
       if (handled) return;
-    } catch (e) {
-      logger.error('Guard error: ' + e.message);
-    }
+    } catch (e) { logger.error('Guard error: ' + e.message); }
 
-    /* ---------- Prefix check ---------- */
     if (!body.startsWith(config.prefix)) return;
 
     const args = body.slice(config.prefix.length).trim().split(/ +/);
@@ -162,9 +174,12 @@ async function startBot() {
     const isOwner = config.owner.includes(sender.split('@')[0]);
     bumpStat('commands');
 
-    /* ---------- Run plugin ---------- */
     try {
-      await sock.sendPresenceUpdate('composing', from);
+      // ❤️ AutoReact to command
+      await autoReactCommand(sock, msg);
+      // ⌨️ AutoTyping
+      await autoTyping(sock, from);
+
       await plugin.run({
         sock, msg, from, sender, isGroup,
         args, text, cmd, isOwner,
@@ -183,10 +198,12 @@ loadPlugins();
 loadDB();
 startBot();
 
-/* ---------- Hot reload plugins ---------- */
+/* ---------- Hot reload ---------- */
 fs.watch(path.join(__dirname, 'plugins'), (evt, file) => {
   if (file && file.endsWith('.js')) {
     logger.info(`♻️ Reloading ${file}`);
     loadPlugins();
   }
 });
+EOF
+echo "✅ index.js updated with automation wired"

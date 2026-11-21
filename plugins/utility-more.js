@@ -20,7 +20,7 @@ module.exports = [
     category: 'utility',
     async run({ reply, sender }) {
       const u = getUser(sender);
-      if (!u.afk) return reply('🙂 You weren\\'t AFK.');
+      if (!u.afk) return reply("🙂 You weren't AFK.");
       const since = Math.floor((Date.now() - u.afk) / 60000);
       setUser(sender, { afk: null, afkReason: '' });
       reply(`👋 Welcome back! You were AFK for *${since} minutes*.`);
@@ -101,5 +101,3 @@ module.exports = [
     }
   }
 ];
-EOF
-echo "✅ plugins/utility-more.js created"
