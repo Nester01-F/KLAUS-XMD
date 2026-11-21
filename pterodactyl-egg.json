@@ -1,0 +1,21 @@
+{
+  "name": "KLAUS XMD",
+  "description": "WhatsApp bot with Baileys",
+  "docker_images": {
+    "Node 20": "ghcr.io/parkervcp/yolks:nodejs_20"
+  },
+  "startup": "node index.js",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\": \"connected\"}",
+    "logs": "{}",
+    "stop": "^C"
+  },
+  "scripts": {
+    "installation": {
+      "script": "apt update && apt install -y ffmpeg git && npm install",
+      "container": "node:20",
+      "entrypoint": "bash"
+    }
+  }
+}
