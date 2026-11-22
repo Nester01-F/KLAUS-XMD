@@ -149,6 +149,12 @@ async function startBot() {
   const { state, saveCreds } = await useMultiFileAuthState(config.sessionName);
 
   // Ask login questions BEFORE creating the socket
+  // On a host with no keyboard (Heroku etc.) we can't ask questions: fail loudly instead of hanging
+  if (!state.creds.registered && !process.stdin.isTTY) {
+    logger.error('No valid session found. SESSION_ID is missing, wrong, or restoreSession() did not write creds.json. Exiting.');
+    process.exit(1);
+  }
+
   if (!state.creds.registered && loginChoice === null) {
     const method = await question('Login method? (1 = QR, 2 = Pairing Code): ');
     loginChoice = method === '2' ? '2' : '1';
