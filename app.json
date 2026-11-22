@@ -5,16 +5,17 @@
   "logo": "https://files.catbox.moe/maj8xu.jpg",
   "keywords": ["whatsapp", "bot", "baileys", "klaus"],
   "env": {
+    "SESSION_ID": {
+      "description": "Your Session ID from the pair site. Keep it private.",
+      "required": true
+    },
     "OWNER_NUMBER": {
       "description": "Your WhatsApp number (no +, e.g. 2547XXXXXXXX)",
       "required": true
     },
     "PREFIX": {
       "description": "Command prefix",
-      "value": "."
-    },
-    "SESSION_ID": {
-      "description": "Base64 session ID (from local run)",
+      "value": ".",
       "required": false
     }
   },

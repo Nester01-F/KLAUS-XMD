@@ -1,3 +1,17 @@
+// Minimal .env loader (VPS / local runs). Real environment variables always win.
+try {
+  const _fs = require('fs');
+  const _envFile = require('path').join(__dirname, '.env');
+  if (_fs.existsSync(_envFile)) {
+    for (const line of _fs.readFileSync(_envFile, 'utf8').split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+      if (m && process.env[m[1]] === undefined) {
+        process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
+      }
+    }
+  }
+} catch {}
+
 const baileys = require('@whiskeysockets/baileys');
 const {
   default: makeWASocket,
@@ -368,6 +382,18 @@ async function startBot() {
       sock.sendMessage(from, { text: config.messages.error }, { quoted: msg });
     }
   });
+}
+
+/* ---------- Tiny HTTP server ----------
+   Render / Koyeb / Railway web services expect the app to listen on $PORT.
+   Harmless elsewhere: it only starts when a PORT variable exists. */
+if (process.env.PORT) {
+  const server = require('http').createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end(`${config.botName} is running\n`);
+  });
+  server.on('error', e => logger.warn('Health server not started: ' + e.message));
+  server.listen(process.env.PORT, () => logger.info(`Health server listening on port ${process.env.PORT}`));
 }
 
 /* ---------- Boot ---------- */

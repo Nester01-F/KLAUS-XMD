@@ -1,7 +1,7 @@
 module.exports = {
   botName: 'KLAUS XMD',
   owner: (process.env.OWNER_NUMBER || '254701881604').split(','), // number(s) without +
-  prefix: '.',
+  prefix: process.env.PREFIX || '.',
   sessionName: 'session',
   timezone: 'Africa/Nairobi',
 
