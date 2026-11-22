@@ -1,21 +1,15 @@
-cat > plugins/text-editor.js << 'EOF'
 module.exports = [
-  /* ---------- FONT STYLES ---------- */
   {
-    command: 'bold',
-    aliases: ['b'],
-    description: 'Bold text',
-    category: 'text',
+    command: 'bold', aliases: ['b'],
+    description: 'Bold text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .bold hello');
       reply(`*${text}*`);
     }
   },
   {
-    command: 'italic',
-    aliases: ['i'],
-    description: 'Italic text',
-    category: 'text',
+    command: 'italic', aliases: ['i'],
+    description: 'Italic text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .italic hello');
       reply(`_${text}_`);
@@ -23,31 +17,23 @@ module.exports = [
   },
   {
     command: 'strike',
-    aliases: ['s'],
-    description: 'Strikethrough text',
-    category: 'text',
+    description: 'Strikethrough text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .strike hello');
       reply(`~${text}~`);
     }
   },
   {
-    command: 'mono',
-    aliases: ['code'],
-    description: 'Monospace text',
-    category: 'text',
+    command: 'mono', aliases: ['code'],
+    description: 'Monospace text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .mono hello');
       reply(`\`\`\`${text}\`\`\``);
     }
   },
-
-  /* ---------- UNICODE FONTS ---------- */
   {
-    command: 'fancy',
-    aliases: ['style'],
-    description: 'Convert to fancy Unicode',
-    category: 'text',
+    command: 'fancy', aliases: ['style'],
+    description: 'Convert to fancy Unicode', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✨ Example: .fancy hello');
       const map = {
@@ -62,10 +48,8 @@ module.exports = [
     }
   },
   {
-    command: 'smallcaps',
-    aliases: ['sc'],
-    description: 'Small caps text',
-    category: 'text',
+    command: 'smallcaps', aliases: ['sc'],
+    description: 'Small caps text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .smallcaps hello');
       const map = {
@@ -78,8 +62,7 @@ module.exports = [
   },
   {
     command: 'bubble',
-    description: 'Bubble text style',
-    category: 'text',
+    description: 'Bubble text style', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .bubble hello');
       const map = {
@@ -94,10 +77,8 @@ module.exports = [
     }
   },
   {
-    command: 'reverse',
-    aliases: ['rev'],
-    description: 'Reverse text',
-    category: 'text',
+    command: 'reverse', aliases: ['rev'],
+    description: 'Reverse text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .reverse hello');
       reply(text.split('').reverse().join(''));
@@ -105,8 +86,7 @@ module.exports = [
   },
   {
     command: 'mock',
-    description: 'Mocking text (aLtErNaTiNg)',
-    category: 'text',
+    description: 'Mocking text (aLtErNaTiNg)', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .mock hello');
       const out = text.split('').map((c, i) =>
@@ -117,8 +97,7 @@ module.exports = [
   },
   {
     command: 'upper',
-    description: 'UPPERCASE text',
-    category: 'text',
+    description: 'UPPERCASE text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .upper hello');
       reply(text.toUpperCase());
@@ -126,18 +105,15 @@ module.exports = [
   },
   {
     command: 'lower',
-    description: 'lowercase text',
-    category: 'text',
+    description: 'lowercase text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .lower HELLO');
       reply(text.toLowerCase());
     }
   },
   {
-    command: 'capitalize',
-    aliases: ['cap'],
-    description: 'Capitalize Each Word',
-    category: 'text',
+    command: 'capitalize', aliases: ['cap'],
+    description: 'Capitalize Each Word', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .capitalize hello world');
       reply(text.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()));
@@ -145,30 +121,23 @@ module.exports = [
   },
   {
     command: 'swap',
-    description: 'sWAP cASE',
-    category: 'text',
+    description: 'sWAP cASE', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('✍️ Example: .swap HeLLo');
       reply(text.split('').map(c => c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase()).join(''));
     }
   },
-
-  /* ---------- ENCODERS ---------- */
   {
-    command: 'binary',
-    aliases: ['bin'],
-    description: 'Convert text to binary',
-    category: 'text',
+    command: 'binary', aliases: ['bin'],
+    description: 'Convert text to binary', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('🔢 Example: .binary hello');
       reply(text.split('').map(c => c.charCodeAt(0).toString(2).padStart(8, '0')).join(' '));
     }
   },
   {
-    command: 'unbinary',
-    aliases: ['unbin'],
-    description: 'Binary to text',
-    category: 'text',
+    command: 'unbinary', aliases: ['unbin'],
+    description: 'Binary to text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('🔢 Example: .unbinary 01101000 01100101');
       try {
@@ -178,28 +147,25 @@ module.exports = [
   },
   {
     command: 'morse',
-    description: 'Text to Morse code',
-    category: 'text',
+    description: 'Text to Morse code', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('📡 Example: .morse sos');
-      const map = { a: '.-', b: '-...', c: '-.-.', d: '-..', e: '.', f: '..-.', g: '--.', h: '....', i: '..', j: '.---', k: '-.-', l: '.-..', m: '--', n: '-.', o: '---', p: '.--.', q: '--.-', r: '.-.', s: '...', t: '-', u: '..-', v: '...-', w: '.--', x: '-..-', y: '-.--', z: '--..', ' ': '/' };
+      const map = { a:'.-',b:'-...',c:'-.-.',d:'-..',e:'.',f:'..-.',g:'--.',h:'....',i:'..',j:'.---',k:'-.-',l:'.-..',m:'--',n:'-.',o:'---',p:'.--.',q:'--.-',r:'.-.',s:'...',t:'-',u:'..-',v:'...-',w:'.--',x:'-..-',y:'-.--',z:'--..',' ':'/' };
       reply(text.toLowerCase().split('').map(c => map[c] || c).join(' '));
     }
   },
   {
     command: 'unmorse',
-    description: 'Morse to text',
-    category: 'text',
+    description: 'Morse to text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('📡 Example: .unmorse ... --- ...');
-      const map = { '.-': 'a', '-...': 'b', '-.-.': 'c', '-..': 'd', '.': 'e', '..-.': 'f', '--.': 'g', '....': 'h', '..': 'i', '.---': 'j', '-.-': 'k', '.-..': 'l', '--': 'm', '-.': 'n', '---': 'o', '.--.': 'p', '--.-': 'q', '.-.': 'r', '...': 's', '-': 't', '..-': 'u', '...-': 'v', '.--': 'w', '-..-': 'x', '-.--': 'y', '--..': 'z', '/': ' ' };
+      const map = { '.-':'a','-...':'b','-.-.':'c','-..':'d','.':'e','..-.':'f','--.':'g','....':'h','..':'i','.---':'j','-.-':'k','.-..':'l','--':'m','-.':'n','---':'o','.--.':'p','--.-':'q','.-.':'r','...':'s','-':'t','..-':'u','...-':'v','.--':'w','-..-':'x','-.--':'y','--..':'z','/':' ' };
       reply(text.split(/\s+/).map(c => map[c] || '?').join(''));
     }
   },
   {
     command: 'rot13',
-    description: 'ROT13 cipher',
-    category: 'text',
+    description: 'ROT13 cipher', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('🔐 Example: .rot13 hello');
       reply(text.replace(/[a-zA-Z]/g, c => {
@@ -210,8 +176,7 @@ module.exports = [
   },
   {
     command: 'hex',
-    description: 'Text to hex',
-    category: 'text',
+    description: 'Text to hex', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('🔢 Example: .hex hello');
       reply(text.split('').map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join(' '));
@@ -219,8 +184,7 @@ module.exports = [
   },
   {
     command: 'unhex',
-    description: 'Hex to text',
-    category: 'text',
+    description: 'Hex to text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('🔢 Example: .unhex 68 65 6c 6c 6f');
       try {
@@ -230,8 +194,7 @@ module.exports = [
   },
   {
     command: 'ascii',
-    description: 'Text to ASCII codes',
-    category: 'text',
+    description: 'Text to ASCII codes', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('🔢 Example: .ascii hello');
       reply(text.split('').map(c => c.charCodeAt(0)).join(' '));
@@ -239,8 +202,7 @@ module.exports = [
   },
   {
     command: 'unascii',
-    description: 'ASCII to text',
-    category: 'text',
+    description: 'ASCII to text', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('🔢 Example: .unascii 104 101 108 108 111');
       try {
@@ -248,13 +210,9 @@ module.exports = [
       } catch { reply('❌ Invalid ASCII.'); }
     }
   },
-
-  /* ---------- UTILS ---------- */
   {
-    command: 'count',
-    aliases: ['wordcount', 'wc'],
-    description: 'Count words/chars',
-    category: 'text',
+    command: 'count', aliases: ['wordcount', 'wc'],
+    description: 'Count words/chars', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('📊 Example: .count hello world');
       const chars = text.length;
@@ -264,10 +222,8 @@ module.exports = [
     }
   },
   {
-    command: 'spoil',
-    aliases: ['spoiler'],
-    description: 'Hide text as spoiler',
-    category: 'text',
+    command: 'spoil', aliases: ['spoiler'],
+    description: 'Hide text as spoiler', category: 'text',
     async run({ reply, text }) {
       if (!text) return reply('🫣 Example: .spoil secret');
       reply(`||${text}||`);
@@ -275,8 +231,7 @@ module.exports = [
   },
   {
     command: 'repeat',
-    description: 'Repeat text N times',
-    category: 'text',
+    description: 'Repeat text N times', category: 'text',
     async run({ reply, text, args }) {
       const n = parseInt(args[0]);
       const msg = args.slice(1).join(' ');

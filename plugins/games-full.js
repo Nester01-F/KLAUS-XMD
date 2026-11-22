@@ -1,16 +1,14 @@
-cat > plugins/games-full.js << 'EOF'
 const {
   tttCreate, tttPlay,
   hangCreate, hangGuess,
   wordleCreate, wordleGuess,
   getGame, endGame
 } = require('../lib/games');
+const { addGameWin } = require('../lib/database');
 
 module.exports = [
-  /* ---------- TICTACTOE ---------- */
   {
-    command: 'ttt',
-    aliases: ['tictactoe'],
+    command: 'ttt', aliases: ['tictactoe'],
     description: 'Play tictactoe vs someone',
     category: 'games',
     async run({ sock, msg, from, reply, isGroup }) {
@@ -21,9 +19,9 @@ module.exports = [
       if (getGame(from, 'ttt')) return reply('🎮 Game already running. End with .endgame ttt');
 
       const me = msg.key.participant;
-      const state = tttCreate(from, me, opp);
+      tttCreate(from, me, opp);
       await sock.sendMessage(from, {
-        text: `🎮 *TICTACTOE*\n\n❌ @${me.split('@')[0]}\n⭕ @${opp.split('@')[0]}\n\nBoard (1-9):\n1️⃣2️⃣3️⃣\n4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣\n\n${state.board ? '' : 'Board:'}\n❌ goes first!\n\nPlay: *.tttplay 5*`,
+        text: `🎮 *TICTACTOE*\n\n❌ @${me.split('@')[0]}\n⭕ @${opp.split('@')[0]}\n\n1️⃣2️⃣3️⃣\n4️⃣5️⃣6️⃣7️⃣8️⃣9️⃣\n\n❌ goes first!\nPlay: *.tttplay 5*`,
         mentions: [me, opp]
       }, { quoted: msg });
     }
@@ -40,16 +38,14 @@ module.exports = [
       if (r.error) return reply(`❌ ${r.error}`);
       if (r.winner) {
         if (r.winner === 'DRAW') return reply(`🤝 *DRAW!*\n\n${r.board}`);
+        addGameWin(r.winner, 'ttt');
         return reply(`🏆 *WINNER: @${r.winner.split('@')[0]}*\n\n${r.board}`, { mentions: [r.winner] });
       }
       await reply(`${r.board}\n\n▶️ Turn: ${r.turn === '❌' ? '❌' : '⭕'}\nPlay: .tttplay N`);
     }
   },
-
-  /* ---------- HANGMAN ---------- */
   {
-    command: 'hangman',
-    aliases: ['hang'],
+    command: 'hangman', aliases: ['hang'],
     description: 'Play hangman',
     category: 'games',
     async run({ sock, from, reply, isGroup }) {
@@ -65,26 +61,25 @@ module.exports = [
     command: 'guess',
     description: 'Guess a letter in hangman',
     category: 'games',
-    async run({ sock, from, reply, args }) {
+    async run({ sock, from, reply, args, sender }) {
       const letter = args[0];
       if (!letter) return reply('🔤 Example: .guess A');
       const r = hangGuess(from, letter);
       if (r.error) return reply(`❌ ${r.error}`);
-
-      if (r.won) return sock.sendMessage(from, {
-        text: `🎉 *YOU WON!*\n\nWord was: *${r.word}*\n\n${r.stage}`
-      });
+      if (r.won) {
+        addGameWin(sender, 'hangman');
+        return sock.sendMessage(from, {
+          text: `🎉 *YOU WON!*\n\nWord was: *${r.word}*\n\n${r.stage}`
+        });
+      }
       if (r.lost) return sock.sendMessage(from, {
         text: `💀 *GAME OVER*\n\nWord was: *${r.word}*\n\n${r.stage}`
       });
-
       await sock.sendMessage(from, {
         text: `${r.stage}\n\nWord: \`${r.display}\`\n❤️ Remaining: *${r.remaining}*\n📝 Guessed: ${r.guessed}`
       });
     }
   },
-
-  /* ---------- WORDLE ---------- */
   {
     command: 'wordle',
     description: 'Start a wordle game',
@@ -100,26 +95,22 @@ module.exports = [
     command: 'wordleplay',
     description: 'Guess a word in wordle',
     category: 'games',
-    async run({ reply, from, args }) {
+    async run({ reply, from, args, sender }) {
       const guess = args[0];
       if (!guess) return reply('🟩 Example: .wordleplay CRANE');
       const r = wordleGuess(from, guess);
       if (r.error) return reply(`❌ ${r.error}`);
-
-      const board = r.tries.map((t, i) =>
-        `${i + 1}. ${t.guess}\n   ${t.row}`
-      ).join('\n');
-
-      if (r.won) return reply(`🎉 *SOLVED!*\n\n${board}\n\nWord: *${r.word}*`);
+      const board = r.tries.map((t, i) => `${i + 1}. ${t.guess}\n   ${t.row}`).join('\n');
+      if (r.won) {
+        addGameWin(sender, 'wordle');
+        return reply(`🎉 *SOLVED!*\n\n${board}\n\nWord: *${r.word}*`);
+      }
       if (r.lost) return reply(`💀 *GAME OVER*\n\n${board}\n\nWord was: *${r.word}*`);
       reply(`🟩 *WORDLE*\n\n${board}\n\n🎯 Remaining tries: *${r.remaining}*`);
     }
   },
-
-  /* ---------- END GAME ---------- */
   {
-    command: 'endgame',
-    aliases: ['end'],
+    command: 'endgame', aliases: ['end'],
     description: 'End active game',
     category: 'games',
     async run({ reply, from, args }) {
