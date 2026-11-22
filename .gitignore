@@ -58,3 +58,4 @@ logs/
 tmp/
 node_modules/
 .env
+logs/
