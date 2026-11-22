@@ -46,4 +46,6 @@ temp/
 
 # ===== Keep these: =====
 !session/.gitkeep
-!.env.example
+!.env.examplesession/
+creds.b64
+node_modules/
