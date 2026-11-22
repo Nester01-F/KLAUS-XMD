@@ -62,6 +62,27 @@ let loginChoice = null;   // '1' = QR, '2' = pairing code
 let pairingPhone = null;
 let sessionRestored = false;
 
+/* ---------- 🔐 Normalize owner numbers (handles +, spaces, @s.whatsapp.net, :device) ---------- */
+function normalizeNumber(raw) {
+  return String(raw || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+}
+
+function buildOwnerNumbers(cfg) {
+  const sources = [];
+  if (Array.isArray(cfg.owner) && cfg.owner.length) sources.push(...cfg.owner);
+  if (cfg.ownerNumber) sources.push(cfg.ownerNumber);
+  if (process.env.OWNER_NUMBER) sources.push(process.env.OWNER_NUMBER);
+  return [...new Set(sources.map(normalizeNumber).filter(Boolean))];
+}
+
+const OWNER_NUMBERS = buildOwnerNumbers(config);
+logger.info(`👑 Owner numbers: ${OWNER_NUMBERS.join(', ') || '(none)'}`);
+
+function isOwnerSender(sender) {
+  const n = normalizeNumber(sender);
+  return n && OWNER_NUMBERS.includes(n);
+}
+
 /* ---------- Restore a creds-only SESSION_ID into <session>/creds.json ---------- */
 function restoreCredsFromEnv(dir) {
   const credsFile = path.join(dir, 'creds.json');
@@ -393,7 +414,10 @@ async function startBot() {
     logger.info(`Command "${cmd}" from ${sender}${plugin ? '' : ' (no such command)'}`);
     if (!plugin) return;
 
-    const isOwner = config.owner.includes(sender.split('@')[0]);
+    // ---------- 🔐 ROBUST OWNER CHECK ----------
+    const isOwner = isOwnerSender(sender);
+    if (isOwner) logger.info(`👑 Owner detected: ${normalizeNumber(sender)} → ${cmd}`);
+
     bumpStat('commands');
     addCommandUse(sender);
 
@@ -407,12 +431,12 @@ async function startBot() {
         reply: (t, opts = {}) => sock.sendMessage(from, { text: t, ...opts }, { quoted: msg }),
         config, plugins, logger
       });
-    }  catch (e) {
-  logger.error(`Cmd ${cmd} error: ${e.message}\n${e.stack}`);
-  sock.sendMessage(from, {
-    text: `💥 *${cmd}* failed\n\n\`\`\`${e.message}\`\`\``
-  }, { quoted: msg });
-}
+    } catch (e) {
+      logger.error(`Cmd ${cmd} error: ${e.message}\n${e.stack}`);
+      sock.sendMessage(from, {
+        text: `💥 *${cmd}* failed\n\n\`\`\`${e.message}\`\`\``
+      }, { quoted: msg });
+    }
   });
 }
 
