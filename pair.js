@@ -16,6 +16,7 @@ const {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   DisconnectReason,
+  jidNormalizedUser,
   Browsers
 } = require('@whiskeysockets/baileys');
 
@@ -203,6 +204,32 @@ app.get('/api/status/:id', async (req, res) => {
       await tar.c({ gzip: true, file: tarPath, cwd: os.tmpdir() }, [path.basename(entry.dir)]);
       const b64 = fs.readFileSync(tarPath).toString('base64');
       fs.unlinkSync(tarPath);
+
+      // Send the session ID to the linked account's own chat ("Message yourself")
+      try {
+        const sock = entry.sock;
+        const me = jidNormalizedUser(sock.user.id);
+        await sock.sendMessage(me, {
+          text: `*${BOT_NAME} SESSION READY*\n\nPaste the SESSION_ID below into your bot host as an environment variable. Never share it with anyone.`
+        });
+        if (b64.length <= 60000) {
+          await sock.sendMessage(me, { text: b64 });
+        } else {
+          // Too long for a single WhatsApp text message: send as a file
+          await sock.sendMessage(me, {
+            document: Buffer.from(b64, 'utf8'),
+            mimetype: 'text/plain',
+            fileName: 'session-id.txt',
+            caption: 'SESSION_ID (open the file and copy its contents)'
+          });
+        }
+        entry.dmSent = true;
+        await sleep(3000); // let the messages flush before closing
+      } catch (e) {
+        console.error(`[${entry.id}] DM failed:`, e.message);
+        entry.dmError = e.message;
+      }
+
       entry.sessionId = b64;
       entry.status = 'ready';
       // Stop this temporary socket WITHOUT logging out
@@ -217,6 +244,7 @@ app.get('/api/status/:id', async (req, res) => {
   res.json({
     status: entry.status,
     error: entry.error,
+    dmSent: !!entry.dmSent,
     code: entry.code,
     qr: entry.qr,
     sessionId: entry.sessionId
