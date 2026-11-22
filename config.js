@@ -1,9 +1,15 @@
 module.exports = {
   botName: 'KLAUS XMD',
-  owner: ['254700000000'], // 👈 your number(s) without +
+  owner: (process.env.OWNER_NUMBER || '254701881604').split(','), // number(s) without +
   prefix: '.',
   sessionName: 'session',
   timezone: 'Africa/Nairobi',
+
+  // 🔐 SESSION ID
+  // Paste your SESSION_ID between the quotes below, OR set a SESSION_ID
+  // environment variable on your host (the environment variable wins).
+  // ⚠️ Never push a real session ID to GitHub: anyone who has it controls your WhatsApp.
+  sessionId: process.env.SESSION_ID || '',
 
   // 🖼️ Images (as requested)
   images: {

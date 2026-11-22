@@ -52,7 +52,7 @@ let sessionRestored = false;
 function restoreCredsFromEnv(dir) {
   const credsFile = path.join(dir, 'creds.json');
   if (fs.existsSync(credsFile)) return;
-  const id = String(process.env.SESSION_ID || misplacedSession || '')
+  const id = String(process.env.SESSION_ID || config.sessionId || misplacedSession || '')
     .trim().replace(/^['"]|['"]$/g, '');
   if (!id) return;
   try {
