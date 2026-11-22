@@ -1,4 +1,5 @@
-cat > plugins/sticker-packs.js << 'EOF'
+
+
 const { addPack, getPack, listPacks, removePack } = require('../lib/database');
 const { getBuffer } = require('../lib/helper');
 const { Sticker, StickerTypes } = require('wa-sticker-formatter');
@@ -33,7 +34,7 @@ module.exports = [
     aliases: ['packadd'],
     description: 'Add stickers to a pack',
     category: 'stickers',
-    async run({ reply, args, sender }) {
+    async run({ reply, args }) {
       const name = args[0]?.toLowerCase();
       const urls = args.slice(1);
       if (!name || !urls.length) return reply('📦 Example: .addsticker mypack https://url1.com/img.png');
@@ -92,4 +93,3 @@ module.exports = [
     }
   }
 ];
-EOF

@@ -1,5 +1,5 @@
-cat > plugins/leaderboard.js << 'EOF'
-const { getGameTop, getCommandTop } = require('../lib/database');
+
+const { getGameTop, getCommandTop, getLeaderboard } = require('../lib/database');
 
 const GAMES = ['ttt', 'hangman', 'wordle'];
 
@@ -16,8 +16,8 @@ module.exports = [
         const top = getCommandTop(10);
         if (!top.length) return reply('📊 No command usage data yet.');
         const list = top.map(([jid, count], i) => {
-          const medals = ['🥇','🥈','🥉'];
-          return `${medals[i] || `${i+1}.`} @${jid.split('@')[0]} — *${count}* commands`;
+          const medals = ['🥇', '🥈', '🥉'];
+          return `${medals[i] || `${i + 1}.`} @${jid.split('@')[0]} — *${count}* commands`;
         }).join('\n');
         return reply(`🏆 *TOP COMMAND USERS*\n━━━━━━━━━━━━━━━\n${list}`);
       }
@@ -26,8 +26,8 @@ module.exports = [
         const top = getGameTop(type, 10);
         if (!top.length) return reply(`📊 No ${type} wins recorded yet.`);
         const list = top.map(([jid, count], i) => {
-          const medals = ['🥇','🥈','🥉'];
-          return `${medals[i] || `${i+1}.`} @${jid.split('@')[0]} — *${count}* wins`;
+          const medals = ['🥇', '🥈', '🥉'];
+          return `${medals[i] || `${i + 1}.`} @${jid.split('@')[0]} — *${count}* wins`;
         }).join('\n');
         return reply(`🏆 *${type.toUpperCase()} LEADERBOARD*\n━━━━━━━━━━━━━━━\n${list}`);
       }
@@ -41,7 +41,6 @@ module.exports = [
     description: 'Your personal stats',
     category: 'leaderboard',
     async run({ reply, sender }) {
-      const { getLeaderboard } = require('../lib/database');
       const lb = getLeaderboard();
       const cmdCount = lb.commands[sender] || 0;
       const wins = {};
@@ -62,4 +61,3 @@ ${winsTxt}`
     }
   }
 ];
-EOF
