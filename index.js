@@ -266,15 +266,15 @@ async function startBot() {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     const msg = messages[0];
-    if (!msg || !msg.message || msg.key.fromMe) return;
+    if (!msg || !msg.message) return;
     if (msg.key.remoteJid === 'status@broadcast') return;
 
     const from = msg.key.remoteJid;
-    const sender = jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
+    const fromMe = !!msg.key.fromMe;
+    const sender = fromMe
+      ? jidNormalizedUser(sock.user.id)
+      : jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
     const isGroup = from.endsWith('@g.us');
-
-    await autoRead(sock, msg);
-    await autoBlockCheck(sock, sender);
 
     const body =
       msg.message.conversation ||
@@ -282,10 +282,18 @@ async function startBot() {
       msg.message.imageMessage?.caption ||
       msg.message.videoMessage?.caption || '';
 
-    try {
-      const handled = await guardMessage({ sock, msg, from, sender, text: body });
-      if (handled) return;
-    } catch (e) { logger.error('Guard error: ' + e.message); }
+    // Messages typed from the bot's own phone are "fromMe": only treat them as commands
+    if (fromMe && !body.startsWith(config.prefix)) return;
+
+    if (!fromMe) {
+      try { await autoRead(sock, msg); } catch (e) { logger.error('autoRead: ' + e.message); }
+      try { await autoBlockCheck(sock, sender); } catch (e) { logger.error('autoBlock: ' + e.message); }
+
+      try {
+        const handled = await guardMessage({ sock, msg, from, sender, text: body });
+        if (handled) return;
+      } catch (e) { logger.error('Guard error: ' + e.message); }
+    }
 
     if (!body.startsWith(config.prefix)) return;
 
@@ -294,6 +302,7 @@ async function startBot() {
     const text = args.join(' ');
 
     const plugin = plugins.get(cmd);
+    logger.info(`Command "${cmd}" from ${sender}${plugin ? '' : ' (no such command)'}`);
     if (!plugin) return;
 
     const isOwner = config.owner.includes(sender.split('@')[0]);
@@ -301,8 +310,8 @@ async function startBot() {
     addCommandUse(sender);
 
     try {
-      await autoReactCommand(sock, msg);
-      await autoTyping(sock, from);
+      try { await autoReactCommand(sock, msg); } catch (e) { logger.error('autoReact: ' + e.message); }
+      try { await autoTyping(sock, from); } catch (e) { logger.error('autoTyping: ' + e.message); }
 
       await plugin.run({
         sock, msg, from, sender, isGroup,
