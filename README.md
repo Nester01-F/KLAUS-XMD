@@ -46,7 +46,7 @@
 
 | 🟢 Pair Site 1 | 🟢 Pair Site 2 |
 |:-:|:-:|
-| [![Session 1](https://img.shields.io/badge/GET%20SESSION-CLICK%20HERE-00ff88?style=for-the-badge&logo=whatsapp&logoColor=white)](https://klaus-xmd-session.vercel.app) | [![Session 2](https://img.shields.io/badge/GET%20SESSION-CLICK%20HERE-22d3ee?style=for-the-badge&logo=whatsapp&logoColor=white)](https://klaus-session-pair.vercel.app) |
+| [![Session 1](https://img.shields.io/badge/GET%20SESSION-CLICK%20HERE-00ff88?style=for-the-badge&logo=whatsapp&logoColor=white)](https://klaus-xmd-kge2.onrender.com/) | [![Session 2](https://img.shields.io/badge/GET%20SESSION-CLICK%20HERE-22d3ee?style=for-the-badge&logo=whatsapp&logoColor=white)](https://klaus-session-pair.vercel.app) |
 
 </div>
 
