@@ -1,6 +1,10 @@
 module.exports = {
   botName: 'KLAUS XMD',
-  owner: (process.env.OWNER_NUMBER || '254701881604').split(','), // number(s) without +
+  owner: (process.env.OWNER_NUMBER || '254701881604').split(','), 
+  // number(s) without +
+    ownerName: 'Warrior Felix',            // ← owner display name
+
+  repo: 'https://github.com/Nester01-F/KLAUS-XMD',  
   prefix: process.env.PREFIX || '.',
   sessionName: 'session',
   timezone: 'Africa/Nairobi',
