@@ -2,6 +2,7 @@ const { getBot, setBot } = require('../lib/database');
 const { startAutoBio, stopAutoBio } = require('../lib/automation');
 
 const TOGGLES = {
+  autorejectcall: '📞 Auto-Reject Calls',
   autoview: '👁️ AutoView Status',
   autoreact: '❤️ AutoReact Commands',
   autoread: '📖 AutoRead Messages',

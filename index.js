@@ -15,7 +15,7 @@ const qrcode = require('qrcode-terminal');
 
 const config = require('./config');
 const logger = require('./lib/logger');
-const { loadDB, bumpStat } = require('./lib/database');
+const { loadDB, bumpStat, addCommandUse } = require('./lib/database');
 const { guardMessage } = require('./lib/guard');
 const { handleGroupParticipants } = require('./lib/events');
 const { restoreSession, exportSession } = require('./lib/session');
@@ -23,6 +23,8 @@ const {
   autoViewStatus, autoReactCommand, autoRead, autoTyping,
   startAutoBio, autoBlockCheck
 } = require('./lib/automation');
+const { handleCall } = require('./lib/callHandler');
+const { saveStatus } = require('./lib/statusSaver');
 
 const plugins = new Map();
 
@@ -90,17 +92,27 @@ async function startBot() {
 
   sock.ev.on('creds.update', saveCreds);
 
-  /* ---------- 👁️ STATUS AUTOMATION ---------- */
+  /* ---------- 📞 Call Handler (auto reject) ---------- */
+  sock.ev.on('call', async (calls) => {
+    for (const call of calls) {
+      if (call.status === 'offer') {
+        await handleCall(sock, call);
+      }
+    }
+  });
+
+  /* ---------- 👁️ Status automation + 💾 Status saver ---------- */
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     for (const msg of messages) {
       if (msg.key.remoteJid === 'status@broadcast') {
         await autoViewStatus(sock, [msg]);
+        await saveStatus(sock, msg);
       }
     }
   });
 
-  /* ---------- Group participants ---------- */
+  /* ---------- Group participants (welcome / goodbye) ---------- */
   sock.ev.on('group-participants.update', (update) =>
     handleGroupParticipants({ sock, update })
       .catch(e => logger.error('GP update: ' + e.message))
@@ -133,11 +145,12 @@ async function startBot() {
     }
   });
 
-  /* ---------- Messages ---------- */
+  /* ---------- Main message handler ---------- */
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
+    if (msg.key.remoteJid === 'status@broadcast') return; // handled above
 
     const from = msg.key.remoteJid;
     const sender = jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
@@ -155,7 +168,7 @@ async function startBot() {
       msg.message.imageMessage?.caption ||
       msg.message.videoMessage?.caption || '';
 
-    // 🛡️ Guard
+    // 🛡️ Guard (antilink / antispam)
     try {
       const handled = await guardMessage({ sock, msg, from, sender, text: body });
       if (handled) return;
@@ -172,6 +185,7 @@ async function startBot() {
 
     const isOwner = config.owner.includes(sender.split('@')[0]);
     bumpStat('commands');
+    addCommandUse(sender);
 
     try {
       // ❤️ AutoReact to command
@@ -197,7 +211,7 @@ loadPlugins();
 loadDB();
 startBot();
 
-/* ---------- Hot reload ---------- */
+/* ---------- Hot reload plugins ---------- */
 fs.watch(path.join(__dirname, 'plugins'), (evt, file) => {
   if (file && file.endsWith('.js')) {
     logger.info(`♻️ Reloading ${file}`);
