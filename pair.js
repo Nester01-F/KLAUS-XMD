@@ -1,6 +1,6 @@
 /**
- * KLAUS XMD — Session Pairing Server
- * Deploy to Render/Railway as: node pair.js
+ * KLAUS XMD — Session Pairing Server (Pairing + QR)
+ * Deploy to Render/Railway: node pair.js
  */
 
 const express = require('express');
@@ -22,7 +22,9 @@ const PORT = process.env.PAIR_PORT || process.env.PORT || 4000;
 
 app.use(express.json());
 
-/* ---------- In-memory sessions ---------- */
+const MENU_IMAGE = 'https://files.catbox.moe/lusgnl.jpg';
+const BOT_NAME = 'KLAUS XMD';
+
 const sessions = new Map();
 
 function makeId() {
@@ -31,8 +33,9 @@ function makeId() {
 
 /* ================= API: CREATE SESSION ================= */
 app.post('/api/pair', async (req, res) => {
-  const { phone } = req.body;
-  if (!phone || !/^\d{8,15}$/.test(phone)) {
+  const { phone, method } = req.body;
+
+  if (method === 'pair' && (!phone || !/^\d{8,15}$/.test(phone))) {
     return res.status(400).json({ error: 'Invalid phone. Digits only, no +.' });
   }
 
@@ -56,20 +59,54 @@ app.post('/api/pair', async (req, res) => {
       markOnlineOnConnect: false
     });
 
-    const entry = { sock, dir, code: null, status: 'starting', sessionId: null, createdAt: Date.now() };
+    const entry = {
+      sock, dir,
+      code: null, qr: null,
+      status: 'starting',
+      sessionId: null,
+      method: method || 'pair',
+      createdAt: Date.now()
+    };
     sessions.set(id, entry);
 
     sock.ev.on('creds.update', saveCreds);
-    sock.ev.on('connection.update', ({ connection }) => {
+
+    sock.ev.on('connection.update', async ({ connection, qr }) => {
+      if (qr) {
+        try {
+          entry.qr = await QRCode.toDataURL(qr, {
+            width: 400,
+            margin: 1,
+            color: { dark: '#0f0f1e', light: '#ffffff' }
+          });
+          entry.status = 'awaiting_scan';
+        } catch (e) {
+          console.error('QR gen failed:', e.message);
+        }
+      }
       if (connection === 'open') entry.status = 'connected';
     });
 
-    await new Promise(r => setTimeout(r, 1500));
-    const code = await sock.requestPairingCode(phone);
-    entry.code = code;
-    entry.status = 'awaiting_code';
+    if (method === 'pair') {
+      await new Promise(r => setTimeout(r, 1500));
+      const code = await sock.requestPairingCode(phone);
+      entry.code = code;
+      entry.status = 'awaiting_code';
+    } else {
+      // QR mode: wait up to 8s for first QR
+      for (let i = 0; i < 16; i++) {
+        if (entry.qr) break;
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
 
-    res.json({ id, code });
+    res.json({
+      id,
+      code: entry.code,
+      qr: entry.qr,
+      method: entry.method,
+      status: entry.status
+    });
   } catch (e) {
     fs.rmSync(dir, { recursive: true, force: true });
     sessions.delete(id);
@@ -95,84 +132,237 @@ app.get('/api/status/:id', async (req, res) => {
     }
   }
 
-  res.json({ status: entry.status, code: entry.code, sessionId: entry.sessionId });
+  res.json({
+    status: entry.status,
+    code: entry.code,
+    qr: entry.qr,
+    sessionId: entry.sessionId
+  });
 });
 
 /* ================= Web UI ================= */
 app.get('/', (req, res) => {
   res.send(`<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>KLAUS XMD — Get Session</title>
+<title>${BOT_NAME} — Get Session</title>
+<link rel="icon" href="${MENU_IMAGE}"/>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Segoe UI',system-ui,sans-serif;background:radial-gradient(circle at 50% 20%,#1a0033,#000010 70%);color:#eee;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
-  .card{background:#12121e;border:1px solid #2a2a4a;border-radius:16px;padding:36px;max-width:520px;width:100%;box-shadow:0 0 40px rgba(168,85,247,.3)}
-  h1{font-size:28px;letter-spacing:3px;text-align:center;margin-bottom:8px;background:linear-gradient(180deg,#fff,#a855f7 60%,#fff);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 0 20px #a855f7}
-  .sub{text-align:center;color:#22d3ee;letter-spacing:4px;font-size:12px;margin-bottom:28px}
-  label{display:block;color:#aaa;font-size:13px;margin:14px 0 6px}
-  input{width:100%;padding:12px 14px;border-radius:8px;border:1px solid #333;background:#0c0c18;color:#fff;font-size:15px;outline:none}
-  input:focus{border-color:#a855f7;box-shadow:0 0 0 2px rgba(168,85,247,.3)}
-  button{width:100%;padding:14px;border:none;border-radius:8px;cursor:pointer;background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;font-weight:700;font-size:15px;letter-spacing:1px;margin-top:22px;transition:transform .1s}
-  button:hover{transform:translateY(-1px)}
-  button:disabled{opacity:.5;cursor:not-allowed}
-  .code{font-family:monospace;font-size:30px;letter-spacing:8px;text-align:center;color:#22d3ee;background:#0c0c18;border:1px dashed #22d3ee;padding:20px;border-radius:10px;margin:20px 0;text-shadow:0 0 10px #22d3ee}
-  .step{background:#0f0f1a;padding:12px;border-radius:8px;color:#bbb;font-size:13px;line-height:1.6}
+  body{
+    font-family:'Segoe UI',system-ui,sans-serif;
+    background:radial-gradient(circle at 50% 0%,#1a0033,#000010 70%);
+    color:#eee;min-height:100vh;padding:20px;
+    display:flex;flex-direction:column;align-items:center;
+  }
+  .banner{
+    max-width:520px;width:100%;margin-bottom:20px;
+    border-radius:8px;overflow:hidden;
+    box-shadow:0 0 30px rgba(168,85,247,.35), 0 0 60px rgba(124,58,237,.15);
+    border:2px solid #a855f7;
+    animation:glow 2.5s ease-in-out infinite alternate;
+  }
+  @keyframes glow{
+    from{box-shadow:0 0 25px rgba(168,85,247,.35), 0 0 50px rgba(124,58,237,.15)}
+    to{box-shadow:0 0 40px rgba(168,85,247,.6), 0 0 80px rgba(124,58,237,.3)}
+  }
+  .banner img{display:block;width:100%;height:auto}
+  .card{
+    background:#12121e;border:1px solid #2a2a4a;border-radius:8px;
+    padding:28px;max-width:520px;width:100%;
+    box-shadow:0 0 30px rgba(168,85,247,.25);
+  }
+  h1{
+    font-size:24px;letter-spacing:3px;text-align:center;margin-bottom:6px;
+    background:linear-gradient(180deg,#fff,#a855f7 60%,#fff);
+    -webkit-background-clip:text;background-clip:text;
+    -webkit-text-fill-color:transparent;
+    text-shadow:0 0 20px #a855f7;
+  }
+  .sub{text-align:center;color:#22d3ee;letter-spacing:4px;font-size:11px;margin-bottom:20px}
+  .tabs{
+    display:flex;gap:6px;margin-bottom:18px;
+    background:#0c0c18;padding:5px;border-radius:6px;
+  }
+  .tab{
+    flex:1;padding:9px;text-align:center;border-radius:4px;
+    cursor:pointer;color:#888;font-size:13px;font-weight:600;
+    letter-spacing:1px;transition:all .2s;border:none;background:none;
+  }
+  .tab.active{
+    background:linear-gradient(135deg,#a855f7,#7c3aed);
+    color:#fff;box-shadow:0 0 12px rgba(168,85,247,.4);
+  }
+  .tab:hover:not(.active){color:#ccc}
+  label{display:block;color:#aaa;font-size:13px;margin:12px 0 6px}
+  input{
+    width:100%;padding:12px 14px;border-radius:6px;border:1px solid #333;
+    background:#0c0c18;color:#fff;font-size:15px;outline:none;
+    transition:border .2s;
+  }
+  input:focus{border-color:#a855f7;box-shadow:0 0 0 3px rgba(168,85,247,.2)}
+  button.primary{
+    width:100%;padding:13px;border:none;border-radius:6px;cursor:pointer;
+    background:linear-gradient(135deg,#a855f7,#7c3aed);color:#fff;
+    font-weight:700;font-size:14px;letter-spacing:1px;margin-top:18px;
+    transition:all .15s;
+  }
+  button.primary:hover{transform:translateY(-2px);box-shadow:0 6px 16px rgba(168,85,247,.4)}
+  button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none}
+  .code{
+    font-family:'Courier New',monospace;font-size:30px;letter-spacing:8px;
+    text-align:center;color:#22d3ee;background:#0c0c18;
+    border:2px dashed #22d3ee;padding:20px;border-radius:6px;margin:18px 0;
+    text-shadow:0 0 12px #22d3ee;font-weight:700;
+    animation:pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
+  .step{
+    background:#0f0f1a;padding:12px;border-radius:6px;
+    color:#bbb;font-size:13px;line-height:1.8;border-left:3px solid #a855f7;
+  }
   .step b{color:#a855f7}
-  .session-box{background:#0c0c18;border:1px solid #22d3ee;border-radius:10px;padding:14px;max-height:160px;overflow-y:auto;font-family:monospace;font-size:11px;color:#22d3ee;word-break:break-all;margin-top:12px}
-  .copy-btn{background:#22d3ee;color:#000;margin-top:10px;font-size:13px;padding:10px}
+  .qr-wrap{
+    text-align:center;margin:16px auto;width:max-content;
+    background:#fff;padding:10px;border-radius:6px;
+  }
+  .qr-wrap img{display:block;width:260px;height:260px;border-radius:4px}
+  .qr-empty{
+    width:260px;height:260px;display:flex;align-items:center;
+    justify-content:center;color:#a855f7;font-size:14px;
+    background:#fff;border-radius:4px;
+  }
+  .session-box{
+    background:#0c0c18;border:1px solid #22d3ee;border-radius:6px;
+    padding:12px;max-height:160px;overflow-y:auto;font-family:monospace;
+    font-size:11px;color:#22d3ee;word-break:break-all;margin-top:10px;
+    line-height:1.5;
+  }
+  .copy-btn{
+    background:#22d3ee;color:#000;margin-top:10px;font-size:13px;
+    padding:11px;border:none;border-radius:6px;cursor:pointer;
+    font-weight:700;width:100%;letter-spacing:1px;
+  }
+  .copy-btn:hover{background:#67e8f9}
   .hidden{display:none}
-  .status{text-align:center;margin-top:20px;color:#aaa;font-size:13px}
+  .status{text-align:center;margin-top:16px;font-size:13px;line-height:1.6}
   .status.loading{color:#facc15}
   .status.ok{color:#22d3ee}
   .status.err{color:#ff0055}
+  .footer{
+    text-align:center;margin-top:20px;color:#555;font-size:11px;
+    letter-spacing:2px;
+  }
+  .footer span{color:#a855f7}
+  .success-icon{font-size:44px;text-align:center;margin:10px 0}
+  @media(max-width:560px){
+    body{padding:12px}
+    .card{padding:20px}
+    h1{font-size:20px}
+    .code{font-size:24px;letter-spacing:5px}
+    .qr-wrap img,.qr-empty{width:220px;height:220px}
+  }
 </style>
 </head>
 <body>
+
+<div class="banner">
+  <img src="${MENU_IMAGE}" alt="${BOT_NAME}"/>
+</div>
+
 <div class="card">
-  <h1>KLAUS XMD</h1>
+  <h1>${BOT_NAME}</h1>
   <div class="sub">GET YOUR SESSION ID</div>
 
   <div id="step1">
-    <label>WhatsApp Number (digits only, no +)</label>
-    <input id="phone" placeholder="254701881604" maxlength="15"/>
-    <button id="btn">Generate Pairing Code</button>
+    <div class="tabs">
+      <button class="tab active" id="tabPair" onclick="switchTab('pair')">🔑 Pairing Code</button>
+      <button class="tab" id="tabQr" onclick="switchTab('qr')">📱 QR Code</button>
+    </div>
+
+    <div id="pairForm">
+      <label>WhatsApp Number (digits only, no +)</label>
+      <input id="phone" placeholder="254701881604" maxlength="15"/>
+      <button class="primary" id="btnPair">Generate Pairing Code</button>
+    </div>
+
+    <div id="qrForm" class="hidden">
+      <div style="text-align:center;color:#aaa;font-size:13px;margin:14px 0">
+        Click below to generate a QR code, then scan it with WhatsApp.
+      </div>
+      <button class="primary" id="btnQr">Generate QR Code</button>
+    </div>
+
     <div id="status1" class="status"></div>
   </div>
 
-  <div id="step2" class="hidden">
+  <div id="step2Pair" class="hidden">
     <div style="text-align:center;color:#aaa;font-size:13px">Your pairing code</div>
     <div id="code" class="code">----</div>
     <div class="step">
       <b>1.</b> Open WhatsApp → Settings → Linked Devices<br/>
-      <b>2.</b> Tap "Link with phone number"<br/>
-      <b>3.</b> Enter code above → confirm
+      <b>2.</b> Tap <b>"Link with phone number"</b><br/>
+      <b>3.</b> Enter the code above → confirm
     </div>
-    <div id="status2" class="status loading">⏳ Waiting for you to enter code...</div>
+    <div id="status2" class="status loading">⏳ Waiting for you to enter the code...</div>
+  </div>
+
+  <div id="step2Qr" class="hidden" style="text-align:center">
+    <div style="color:#aaa;font-size:13px;margin-bottom:10px">Scan this QR code</div>
+    <div class="qr-wrap" id="qrWrap">
+      <div class="qr-empty" id="qrEmpty">⏳ Generating QR...</div>
+    </div>
+    <div class="step" style="text-align:left;margin-top:14px">
+      <b>1.</b> Open WhatsApp → Settings → Linked Devices<br/>
+      <b>2.</b> Tap <b>"Link a Device"</b><br/>
+      <b>3.</b> Point your camera at the QR above
+    </div>
+    <div id="statusQr" class="status loading">⏳ Waiting for scan...</div>
   </div>
 
   <div id="step3" class="hidden">
-    <div style="text-align:center;color:#22d3ee;font-weight:700;margin-bottom:12px">✅ SESSION READY!</div>
-    <div class="step">Copy the SESSION_ID below and paste it as an env var on your bot host (Railway/Heroku).</div>
+    <div class="success-icon">✅</div>
+    <div style="text-align:center;color:#22d3ee;font-weight:700;font-size:18px;margin-bottom:12px">
+      SESSION READY!
+    </div>
+    <div class="step">
+      Copy the <b>SESSION_ID</b> below and paste it as an environment variable on your bot host.
+    </div>
     <div id="session" class="session-box"></div>
     <button class="copy-btn" id="copyBtn">📋 Copy SESSION_ID</button>
   </div>
 </div>
 
+<div class="footer">
+  Powered by <span>KLAUS TECH</span> © Warrior Felix
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 let pollTimer = null;
+let currentMethod = 'pair';
 
-$('btn').onclick = async () => {
+function switchTab(method) {
+  currentMethod = method;
+  $('tabPair').classList.toggle('active', method === 'pair');
+  $('tabQr').classList.toggle('active', method === 'qr');
+  $('pairForm').classList.toggle('hidden', method !== 'pair');
+  $('qrForm').classList.toggle('hidden', method !== 'qr');
+  $('status1').textContent = '';
+  $('status1').className = 'status';
+}
+
+/* -------- Pairing code flow -------- */
+$('btnPair').onclick = async () => {
   const phone = $('phone').value.trim();
   if (!/^\\d{8,15}$/.test(phone)) {
     $('status1').className = 'status err';
     $('status1').textContent = '❌ Invalid number. Use digits only.';
     return;
   }
-  $('btn').disabled = true;
+  $('btnPair').disabled = true;
   $('status1').className = 'status loading';
   $('status1').textContent = '⏳ Generating pairing code...';
 
@@ -180,30 +370,89 @@ $('btn').onclick = async () => {
     const r = await fetch('/api/pair', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone })
+      body: JSON.stringify({ phone, method: 'pair' })
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Failed');
 
     $('code').textContent = d.code ? d.code.slice(0,4) + '-' + d.code.slice(4) : '----';
     $('step1').classList.add('hidden');
-    $('step2').classList.remove('hidden');
+    $('step2Pair').classList.remove('hidden');
     poll(d.id);
   } catch (e) {
     $('status1').className = 'status err';
     $('status1').textContent = '❌ ' + e.message;
-    $('btn').disabled = false;
+    $('btnPair').disabled = false;
   }
 };
 
+/* -------- QR flow -------- */
+$('btnQr').onclick = async () => {
+  $('btnQr').disabled = true;
+  $('status1').className = 'status loading';
+  $('status1').textContent = '⏳ Generating QR code...';
+
+  try {
+    const r = await fetch('/api/pair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'qr' })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed');
+
+    $('step1').classList.add('hidden');
+    $('step2Qr').classList.remove('hidden');
+
+    // Show QR immediately if returned
+    if (d.qr) setQrImage(d.qr);
+
+    pollForQr(d.id);
+  } catch (e) {
+    $('status1').className = 'status err';
+    $('status1').textContent = '❌ ' + e.message;
+    $('btnQr').disabled = false;
+  }
+};
+
+function setQrImage(dataUrl) {
+  const wrap = $('qrWrap');
+  wrap.innerHTML = '<img id="qrImg" alt="QR"/>';
+  $('qrImg').src = dataUrl;
+}
+
+function pollForQr(id) {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch('/api/status/' + id);
+      const d = await r.json();
+
+      // Keep updating QR as long as we don't have a rendered image yet
+      if (d.qr) setQrImage(d.qr);
+
+      if (d.status === 'ready' && d.sessionId) {
+        clearInterval(pollTimer);
+        $('step2Qr').classList.add('hidden');
+        $('step3').classList.remove('hidden');
+        $('session').textContent = d.sessionId;
+      } else if (d.status === 'connected') {
+        $('statusQr').textContent = '🔐 Connected — generating session...';
+      }
+    } catch {}
+  }, 2000);
+}
+
+/* -------- Polling for pairing code flow -------- */
 function poll(id) {
+  if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     try {
       const r = await fetch('/api/status/' + id);
       const d = await r.json();
       if (d.status === 'ready' && d.sessionId) {
         clearInterval(pollTimer);
-        $('step2').classList.add('hidden');
+        $('step2Pair').classList.add('hidden');
         $('step3').classList.remove('hidden');
         $('session').textContent = d.sessionId;
       } else if (d.status === 'connected') {
@@ -213,6 +462,7 @@ function poll(id) {
   }, 3000);
 }
 
+/* -------- Copy button -------- */
 $('copyBtn').onclick = () => {
   navigator.clipboard.writeText($('session').textContent);
   $('copyBtn').textContent = '✅ Copied!';
@@ -226,7 +476,7 @@ $('copyBtn').onclick = () => {
 /* ================= Health check ================= */
 app.get('/health', (req, res) => res.send('OK'));
 
-/* ================= Cleanup old sessions ================= */
+/* ================= Cleanup ================= */
 setInterval(() => {
   const now = Date.now();
   for (const [id, entry] of sessions) {
