@@ -124,7 +124,24 @@ function startKeepAlive(sock) {
 }
 
 /* ---------- Connection message ---------- */
+let connectedMessageSent = false;
+
+async function sendWithFallback(sock, jid, caption) {
+  try {
+    await sock.sendMessage(jid, { image: { url: config.images.alive }, caption });
+  } catch (e) {
+    logger.warn('Alive image failed, sending text instead: ' + e.message);
+    try {
+      await sock.sendMessage(jid, { text: caption });
+    } catch (e2) {
+      logger.error('Connected message failed: ' + e2.message);
+    }
+  }
+}
+
 async function sendConnectedMessage(sock) {
+  if (connectedMessageSent) return; // once per start, not on every reconnect
+  connectedMessageSent = true;
   const up = Math.floor((Date.now() - startTime) / 1000);
   const d = Math.floor(up / 86400);
   const h = Math.floor((up % 86400) / 3600);
@@ -142,18 +159,11 @@ async function sendConnectedMessage(sock) {
 
 > _KLAUS XMD © Warrior Felix_`;
 
-  await sock.sendMessage(sock.user.id, {
-    image: { url: config.images.alive },
-    caption
-  }).catch(() => {});
+  const selfJid = jidNormalizedUser(sock.user.id);
+  await sendWithFallback(sock, selfJid, caption);
 
-  const ownerJid = config.owner[0] + '@s.whatsapp.net';
-  if (ownerJid !== sock.user.id) {
-    await sock.sendMessage(ownerJid, {
-      image: { url: config.images.alive },
-      caption
-    }).catch(() => {});
-  }
+  const ownerJid = jidNormalizedUser(config.owner[0] + '@s.whatsapp.net');
+  if (ownerJid !== selfJid) await sendWithFallback(sock, ownerJid, caption);
 }
 
 /* ---------- Start bot ---------- */
