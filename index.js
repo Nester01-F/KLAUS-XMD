@@ -334,6 +334,37 @@ async function startBot() {
       : jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
     const isGroup = from.endsWith('@g.us');
 
+    // ---------- 👁️ AntiViewOnce Auto-Forward ----------
+    if (msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage) {
+      try {
+        const { getBot } = require('./lib/database');
+        const bot = getBot();
+
+        if (bot.antiviewonce && !fromMe) {
+          const ownerJid = config.owner[0] + '@s.whatsapp.net';
+          const senderName = sender.split('@')[0];
+          const inner = msg.message.viewOnceMessageV2?.message || msg.message.viewOnceMessage?.message;
+
+          if (inner?.imageMessage) {
+            const buf = await sock.downloadMediaMessage(msg, 'buffer', {}, {});
+            await sock.sendMessage(ownerJid, {
+              image: buf,
+              caption: `👁️ *AutoViewOnce*\nFrom: @${senderName}\nChat: ${from}`
+            }, { mentions: [sender] });
+          } else if (inner?.videoMessage) {
+            const buf = await sock.downloadMediaMessage(msg, 'buffer', {}, {});
+            await sock.sendMessage(ownerJid, {
+              video: buf,
+              caption: `👁️ *AutoViewOnce*\nFrom: @${senderName}\nChat: ${from}`
+            }, { mentions: [sender] });
+          }
+        }
+      } catch (e) {
+        logger.warn('AntiViewOnce failed: ' + e.message);
+      }
+    }
+
+    // ---------- Extract body ----------
     const body =
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text ||
@@ -352,7 +383,6 @@ async function startBot() {
         if (handled) return;
       } catch (e) { logger.error('Guard error: ' + e.message); }
     }
-
     if (!body.startsWith(config.prefix)) return;
 
     const args = body.slice(config.prefix.length).trim().split(/ +/);
