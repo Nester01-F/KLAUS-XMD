@@ -10,6 +10,7 @@
     "both": "node index.js && node pair.js"
   },
   "dependencies": {
+    "@chirag127/keyless-kilo": "^0.3.0",
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "axios": "^1.7.7",
@@ -31,5 +32,7 @@
     "yt-search": "^2.12.1",
     "ytdl-core": "^4.11.5"
   },
- "engines": { "node": "24.x" }
+  "engines": {
+    "node": "24.x"
+  }
 }

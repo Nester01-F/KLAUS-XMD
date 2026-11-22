@@ -377,10 +377,12 @@ async function startBot() {
         reply: (t, opts = {}) => sock.sendMessage(from, { text: t, ...opts }, { quoted: msg }),
         config, plugins, logger
       });
-    } catch (e) {
-      logger.error(`Cmd ${cmd} error: ${e.message}`);
-      sock.sendMessage(from, { text: config.messages.error }, { quoted: msg });
-    }
+    }  catch (e) {
+  logger.error(`Cmd ${cmd} error: ${e.message}\n${e.stack}`);
+  sock.sendMessage(from, {
+    text: `💥 *${cmd}* failed\n\n\`\`\`${e.message}\`\`\``
+  }, { quoted: msg });
+}
   });
 }
 
