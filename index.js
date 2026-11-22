@@ -16,6 +16,14 @@ const readline = require('readline');
 const qrcode = require('qrcode-terminal');
 
 const config = require('./config');
+
+// Guard: if the session ID was pasted into the session-NAME setting, the "folder name"
+// would be thousands of characters long (ENAMETOOLONG). Detect it and use a normal folder.
+let misplacedSession = null;
+if (String(config.sessionName || '').length > 60) {
+  misplacedSession = String(config.sessionName);
+  config.sessionName = 'session';
+}
 const logger = require('./lib/logger');
 const database = require('./lib/database');
 const { loadDB, bumpStat } = database;
@@ -39,6 +47,23 @@ let startTime = Date.now();
 let loginChoice = null;   // '1' = QR, '2' = pairing code
 let pairingPhone = null;
 let sessionRestored = false;
+
+/* ---------- Restore a creds-only SESSION_ID into <session>/creds.json ---------- */
+function restoreCredsFromEnv(dir) {
+  const credsFile = path.join(dir, 'creds.json');
+  if (fs.existsSync(credsFile)) return;
+  const id = String(process.env.SESSION_ID || misplacedSession || '')
+    .trim().replace(/^['"]|['"]$/g, '');
+  if (!id) return;
+  try {
+    const text = Buffer.from(id, 'base64').toString('utf8');
+    JSON.parse(text); // only accept valid creds JSON
+    fs.writeFileSync(credsFile, text);
+    logger.info('Session restored from SESSION_ID');
+  } catch {
+    // not a creds-only ID: the legacy restoreSession() may still handle it
+  }
+}
 
 /* ---------- Load plugins ---------- */
 function loadPlugins() {
@@ -142,11 +167,14 @@ async function startBot() {
   // Only restore on the first start, never on reconnects
   // (a restart right after pairing must not overwrite the new login)
   if (!sessionRestored) {
-    try { restoreSession(); } catch (e) { logger.error('restoreSession: ' + e.message); }
+    restoreCredsFromEnv(sessionPath);
+    if (!fs.existsSync(path.join(sessionPath, 'creds.json'))) {
+      try { restoreSession(); } catch (e) { logger.error('restoreSession: ' + e.message); }
+    }
     sessionRestored = true;
   }
 
-  const { state, saveCreds } = await useMultiFileAuthState(config.sessionName);
+  const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
   // Ask login questions BEFORE creating the socket
   // On a host with no keyboard (Heroku etc.) we can't ask questions: fail loudly instead of hanging
@@ -242,7 +270,7 @@ async function startBot() {
 
       startKeepAlive(sock);
       await sendConnectedMessage(sock);
-      setTimeout(() => exportSession(), 2000);
+      setTimeout(() => { try { exportSession(); } catch (e) { logger.error('exportSession: ' + e.message); } }, 2000);
       startAutoBio(sock);
     }
 
