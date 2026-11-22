@@ -13,8 +13,10 @@ const QRCode = require('qrcode');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
-  fetchLatestWaWebVersion,
-  makeCacheableSignalKeyStore
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+  DisconnectReason,
+  Browsers
 } = require('@whiskeysockets/baileys');
 
 const app = express();
@@ -24,6 +26,7 @@ app.use(express.json());
 
 const MENU_IMAGE = 'https://files.catbox.moe/lusgnl.jpg';
 const BOT_NAME = 'KLAUS XMD';
+const MAX_RECONNECTS = 10;
 
 const sessions = new Map();
 
@@ -31,11 +34,106 @@ function makeId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* ================= Socket factory (reconnects reuse the same folder) ================= */
+async function createSocket(entry) {
+  const { state, saveCreds } = await useMultiFileAuthState(entry.dir);
+
+  let version;
+  try {
+    ({ version } = await fetchLatestBaileysVersion());
+  } catch (e) {
+    console.error('Version fetch failed, using Baileys default:', e.message);
+  }
+
+  const sock = makeWASocket({
+    ...(version ? { version } : {}),
+    logger: P({ level: 'silent' }),
+    printQRInTerminal: false,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, P({ level: 'silent' }))
+    },
+    browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
+    markOnlineOnConnect: false,
+    syncFullHistory: false,
+    connectTimeoutMs: 60000
+  });
+
+  entry.sock = sock;
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    if (entry.closed) return;
+
+    if (qr && entry.method === 'qr' && !state.creds.registered) {
+      try {
+        entry.qr = await QRCode.toDataURL(qr, {
+          width: 400,
+          margin: 1,
+          color: { dark: '#0f0f1e', light: '#ffffff' }
+        });
+        entry.status = 'awaiting_scan';
+      } catch (e) {
+        console.error('QR gen failed:', e.message);
+      }
+    }
+
+    if (connection === 'open') {
+      entry.status = 'connected';
+      entry.connectedAt = Date.now();
+      entry.reconnects = 0;
+    }
+
+    if (connection === 'close') {
+      const code = lastDisconnect?.error?.output?.statusCode;
+      console.log(`[${entry.id}] closed: ${code} ${lastDisconnect?.error?.message || ''}`);
+
+      // Already exported or finished: nothing more to do
+      if (entry.sessionId) return;
+
+      if (code === DisconnectReason.loggedOut) {
+        entry.status = 'failed';
+        entry.error = 'Logged out by WhatsApp. Please try again.';
+        return;
+      }
+
+      // 515 (restartRequired) is expected right after pairing: open a fresh socket
+      entry.reconnects = (entry.reconnects || 0) + 1;
+      if (entry.reconnects > MAX_RECONNECTS) {
+        entry.status = 'failed';
+        entry.error = 'Could not connect to WhatsApp. Please try again.';
+        return;
+      }
+      const delay = code === DisconnectReason.restartRequired ? 1000 : 2500;
+      setTimeout(() => {
+        if (entry.closed) return;
+        createSocket(entry).catch(e => {
+          console.error('Reconnect failed:', e.message);
+          entry.status = 'failed';
+          entry.error = e.message;
+        });
+      }, delay);
+    }
+  });
+
+  return sock;
+}
+
+function destroyEntry(id, entry) {
+  entry.closed = true;
+  try { entry.sock?.end?.(undefined); } catch {}
+  try { fs.rmSync(entry.dir, { recursive: true, force: true }); } catch {}
+  sessions.delete(id);
+}
+
 /* ================= API: CREATE SESSION ================= */
 app.post('/api/pair', async (req, res) => {
-  const { phone, method } = req.body;
+  const method = req.body?.method === 'qr' ? 'qr' : 'pair';
+  const phone = String(req.body?.phone || '').replace(/\D/g, '');
 
-  if (method === 'pair' && (!phone || !/^\d{8,15}$/.test(phone))) {
+  if (method === 'pair' && !/^\d{8,15}$/.test(phone)) {
     return res.status(400).json({ error: 'Invalid phone. Digits only, no +.' });
   }
 
@@ -43,52 +141,26 @@ app.post('/api/pair', async (req, res) => {
   const dir = path.join(os.tmpdir(), 'klaus-sess-' + id);
   fs.mkdirSync(dir, { recursive: true });
 
+  const entry = {
+    id, sock: null, dir,
+    code: null, qr: null,
+    status: 'starting',
+    error: null,
+    sessionId: null,
+    method,
+    reconnects: 0,
+    closed: false,
+    exporting: false,
+    connectedAt: 0,
+    createdAt: Date.now()
+  };
+  sessions.set(id, entry);
+
   try {
-    const { state, saveCreds } = await useMultiFileAuthState(dir);
-    const { version } = await fetchLatestWaWebVersion();
-
-    const sock = makeWASocket({
-      version,
-      logger: P({ level: 'silent' }),
-      printQRInTerminal: false,
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, P({ level: 'silent' }))
-      },
-      browser: ['Mac OS', 'Chrome', '1.0.0'],
-      markOnlineOnConnect: false
-    });
-
-    const entry = {
-      sock, dir,
-      code: null, qr: null,
-      status: 'starting',
-      sessionId: null,
-      method: method || 'pair',
-      createdAt: Date.now()
-    };
-    sessions.set(id, entry);
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', async ({ connection, qr }) => {
-      if (qr) {
-        try {
-          entry.qr = await QRCode.toDataURL(qr, {
-            width: 400,
-            margin: 1,
-            color: { dark: '#0f0f1e', light: '#ffffff' }
-          });
-          entry.status = 'awaiting_scan';
-        } catch (e) {
-          console.error('QR gen failed:', e.message);
-        }
-      }
-      if (connection === 'open') entry.status = 'connected';
-    });
+    const sock = await createSocket(entry);
 
     if (method === 'pair') {
-      await new Promise(r => setTimeout(r, 1500));
+      await sleep(3000);
       const code = await sock.requestPairingCode(phone);
       entry.code = code;
       entry.status = 'awaiting_code';
@@ -96,7 +168,7 @@ app.post('/api/pair', async (req, res) => {
       // QR mode: wait up to 8s for first QR
       for (let i = 0; i < 16; i++) {
         if (entry.qr) break;
-        await new Promise(r => setTimeout(r, 500));
+        await sleep(500);
       }
     }
 
@@ -108,8 +180,7 @@ app.post('/api/pair', async (req, res) => {
       status: entry.status
     });
   } catch (e) {
-    fs.rmSync(dir, { recursive: true, force: true });
-    sessions.delete(id);
+    destroyEntry(id, entry);
     res.status(500).json({ error: e.message });
   }
 });
@@ -119,7 +190,14 @@ app.get('/api/status/:id', async (req, res) => {
   const entry = sessions.get(req.params.id);
   if (!entry) return res.status(404).json({ error: 'Session not found' });
 
-  if (entry.status === 'connected' && !entry.sessionId) {
+  // Give WhatsApp a few seconds after "open" so creds finish saving
+  if (
+    entry.status === 'connected' &&
+    !entry.sessionId &&
+    !entry.exporting &&
+    Date.now() - entry.connectedAt > 4000
+  ) {
+    entry.exporting = true;
     const tarPath = path.join(os.tmpdir(), `export-${req.params.id}.tar.gz`);
     try {
       await tar.c({ gzip: true, file: tarPath, cwd: os.tmpdir() }, [path.basename(entry.dir)]);
@@ -127,13 +205,18 @@ app.get('/api/status/:id', async (req, res) => {
       fs.unlinkSync(tarPath);
       entry.sessionId = b64;
       entry.status = 'ready';
+      // Stop this temporary socket WITHOUT logging out
+      entry.closed = true;
+      try { entry.sock?.end?.(undefined); } catch {}
     } catch (e) {
+      entry.exporting = false;
       return res.status(500).json({ error: 'Export failed: ' + e.message });
     }
   }
 
   res.json({
     status: entry.status,
+    error: entry.error,
     code: entry.code,
     qr: entry.qr,
     sessionId: entry.sessionId
@@ -158,17 +241,17 @@ app.get('/', (req, res) => {
     display:flex;flex-direction:column;align-items:center;
   }
   .banner{
-    max-width:520px;width:100%;margin-bottom:20px;
-    border-radius:8px;overflow:hidden;
-    box-shadow:0 0 30px rgba(168,85,247,.35), 0 0 60px rgba(124,58,237,.15);
+    width:90px;height:90px;margin:0 auto 20px;
+    border-radius:50%;overflow:hidden;
     border:2px solid #a855f7;
+    box-shadow:0 0 30px rgba(168,85,247,.35), 0 0 60px rgba(124,58,237,.15);
     animation:glow 2.5s ease-in-out infinite alternate;
   }
   @keyframes glow{
     from{box-shadow:0 0 25px rgba(168,85,247,.35), 0 0 50px rgba(124,58,237,.15)}
     to{box-shadow:0 0 40px rgba(168,85,247,.6), 0 0 80px rgba(124,58,237,.3)}
   }
-  .banner img{display:block;width:100%;height:auto}
+  .banner img{display:block;width:100%;height:100%;object-fit:cover}
   .card{
     background:#12121e;border:1px solid #2a2a4a;border-radius:8px;
     padding:28px;max-width:520px;width:100%;
@@ -354,6 +437,17 @@ function switchTab(method) {
   $('status1').className = 'status';
 }
 
+function showFailure(msg) {
+  if (pollTimer) clearInterval(pollTimer);
+  $('step2Pair').classList.add('hidden');
+  $('step2Qr').classList.add('hidden');
+  $('step1').classList.remove('hidden');
+  $('btnPair').disabled = false;
+  $('btnQr').disabled = false;
+  $('status1').className = 'status err';
+  $('status1').textContent = '❌ ' + (msg || 'Something went wrong. Please try again.');
+}
+
 /* -------- Pairing code flow -------- */
 $('btnPair').onclick = async () => {
   const phone = $('phone').value.trim();
@@ -364,7 +458,7 @@ $('btnPair').onclick = async () => {
   }
   $('btnPair').disabled = true;
   $('status1').className = 'status loading';
-  $('status1').textContent = '⏳ Generating pairing code...';
+  $('status1').textContent = '⏳ Generating pairing code (about 5 seconds)...';
 
   try {
     const r = await fetch('/api/pair', {
@@ -404,7 +498,6 @@ $('btnQr').onclick = async () => {
     $('step1').classList.add('hidden');
     $('step2Qr').classList.remove('hidden');
 
-    // Show QR immediately if returned
     if (d.qr) setQrImage(d.qr);
 
     pollForQr(d.id);
@@ -428,8 +521,8 @@ function pollForQr(id) {
       const r = await fetch('/api/status/' + id);
       const d = await r.json();
 
-      // Keep updating QR as long as we don't have a rendered image yet
-      if (d.qr) setQrImage(d.qr);
+      if (d.status === 'failed') return showFailure(d.error);
+      if (d.qr && d.status !== 'connected' && d.status !== 'ready') setQrImage(d.qr);
 
       if (d.status === 'ready' && d.sessionId) {
         clearInterval(pollTimer);
@@ -450,6 +543,9 @@ function poll(id) {
     try {
       const r = await fetch('/api/status/' + id);
       const d = await r.json();
+
+      if (d.status === 'failed') return showFailure(d.error);
+
       if (d.status === 'ready' && d.sessionId) {
         clearInterval(pollTimer);
         $('step2Pair').classList.add('hidden');
@@ -480,11 +576,7 @@ app.get('/health', (req, res) => res.send('OK'));
 setInterval(() => {
   const now = Date.now();
   for (const [id, entry] of sessions) {
-    if (now - entry.createdAt > 10 * 60 * 1000) {
-      try { entry.sock?.end?.(); } catch {}
-      try { fs.rmSync(entry.dir, { recursive: true, force: true }); } catch {}
-      sessions.delete(id);
-    }
+    if (now - entry.createdAt > 10 * 60 * 1000) destroyEntry(id, entry);
   }
 }, 60 * 1000);
 
