@@ -31,7 +31,7 @@ module.exports = [
     async run({ reply, text }) {
       if (!text) return reply('📝 Paste text to summarize.');
 
-      // Limit input to avoid huge prompts
+      // Limit input to avoid huge prompts 
       const input = text.slice(0, 4000);
 
       try {
