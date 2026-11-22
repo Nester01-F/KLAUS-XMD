@@ -135,5 +135,3 @@ module.exports = [
     }
   }
 ];
-EOF
-echo "✅ plugins/games-full.js created"

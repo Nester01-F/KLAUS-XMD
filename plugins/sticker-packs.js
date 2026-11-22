@@ -93,4 +93,3 @@ module.exports = [
   }
 ];
 EOF
-echo "✅ plugins/sticker-packs.js created"

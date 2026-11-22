@@ -286,5 +286,3 @@ module.exports = [
     }
   }
 ];
-EOF
-echo "✅ plugins/text-editor.js created"

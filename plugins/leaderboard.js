@@ -63,4 +63,3 @@ ${winsTxt}`
   }
 ];
 EOF
-echo "✅ plugins/leaderboard.js created"
