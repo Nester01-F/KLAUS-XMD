@@ -246,7 +246,7 @@ async function startBot() {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, P({ level: 'silent' }))
     },
-    browser: ['Chrome', 'Android', '15'],
+    browser: Browsers ? Browsers.ubuntu('Chrome') : ['Ubuntu', 'Chrome', '20.0.04'],
     generateHighQualityLinkPreview: true,
     syncFullHistory: false,
     markOnlineOnConnect: false,
