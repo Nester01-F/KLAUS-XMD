@@ -1,27 +1,27 @@
 /**
  * KLAUS XMD: view-once saver (owner only)
- * Save as plugins/viewonce.js
- *
- * Usage: reply to a view-once photo, video or voice note with  .vv  (or .viewonce)
- * The media is sent to YOUR OWN chat only, never to the chat the command was used in,
- * so it is not re-shared with a group or with the sender.
- *
- * Only use it on media that was sent to you, and respect the sender's privacy.
+ * Reply to a view-once photo/video/voice note with `.vv`
+ * The media is sent to YOUR OWN chat only.
  */
 
-const { downloadContentFromMessage, normalizeMessageContent, jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { downloadMediaMessage, normalizeMessageContent, jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 const WRAPPERS = ['viewOnceMessage', 'viewOnceMessageV2', 'viewOnceMessageV2Extension'];
 const MEDIA = ['imageMessage', 'videoMessage', 'audioMessage'];
 
-async function toBuffer(stream) {
-  const chunks = [];
-  for await (const chunk of stream) chunks.push(chunk);
-  return Buffer.concat(chunks);
+function normalizeNumber(raw) {
+  return String(raw || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
 
-async function reveal({ sock, msg, reply, isOwner, config }) {
-  if (!isOwner) return reply(config?.messages?.notOwner || '❌ *Owner only command!*');
+async function reveal({ sock, msg, reply, isOwner, config, sender, logger }) {
+  // Owner check with normalized comparison
+  const senderNum = normalizeNumber(sender);
+  const ownerNums = (config.owner || []).map(normalizeNumber);
+  const isActuallyOwner = isOwner || ownerNums.includes(senderNum);
+
+  if (!isActuallyOwner) {
+    return reply(config?.messages?.notOwner || '❌ *Owner only command!*');
+  }
 
   const content = normalizeMessageContent(msg.message);
   const quoted = content?.extendedTextMessage?.contextInfo?.quotedMessage;
@@ -33,44 +33,68 @@ async function reveal({ sock, msg, reply, isOwner, config }) {
 
   const media = inner[type];
   const wasWrapped = WRAPPERS.some(k => quoted[k]);
-  if (!wasWrapped && !media.viewOnce) return reply('❌ That is not a view-once message.');
+  if (!wasWrapped && !media.viewOnce) {
+    return reply('❌ That is not a view-once message.');
+  }
+
+  // Debug log — remove after confirming it works
+  logger?.info?.(`[VV] type=${type} wrapped=${wasWrapped} hasKey=${!!media.mediaKey} hasUrl=${!!(media.url || media.directPath)}`);
 
   if (!media.mediaKey || !(media.url || media.directPath)) {
     return reply(
-      '⚠️ WhatsApp did not include the media in this reply (it may already have been opened or have expired). ' +
-        'Try replying as soon as it arrives.'
+      '⚠️ WhatsApp did not include the media in this reply (it may already have been opened or have expired).\n' +
+      'Try replying as soon as it arrives, without opening it first.'
     );
   }
 
   let buffer;
   try {
-    buffer = await toBuffer(await downloadContentFromMessage(media, type.replace('Message', '')));
-  } catch {
+    buffer = await downloadMediaMessage(
+      { message: quoted, key: msg.key },
+      'buffer',
+      {},
+      { logger: undefined, reuploadRequest: sock.updateMediaMessage }
+    );
+  } catch (e) {
+    logger?.error?.(`[VV] download failed: ${e.message}`);
     return reply('⚠️ Could not download it. It may already have been opened or have expired.');
   }
-  if (!buffer.length) return reply('⚠️ Could not download it. It may already have been opened or have expired.');
+  if (!buffer?.length) {
+    return reply('⚠️ Empty download — the view-once may have expired.');
+  }
 
   const me = jidNormalizedUser(sock.user.id);
   const note = '👁️ View-once saved';
   const caption = media.caption ? `${note}\n\n${media.caption}` : note;
 
-  if (type === 'imageMessage') {
-    await sock.sendMessage(me, { image: buffer, caption });
-  } else if (type === 'videoMessage') {
-    await sock.sendMessage(me, { video: buffer, caption, mimetype: media.mimetype || 'video/mp4' });
-  } else {
-    await sock.sendMessage(me, {
-      audio: buffer,
-      mimetype: media.mimetype || 'audio/ogg; codecs=opus',
-      ptt: !!media.ptt
-    });
-    await sock.sendMessage(me, { text: note });
+  try {
+    if (type === 'imageMessage') {
+      await sock.sendMessage(me, { image: buffer, caption });
+    } else if (type === 'videoMessage') {
+      await sock.sendMessage(me, { video: buffer, caption, mimetype: media.mimetype || 'video/mp4' });
+    } else {
+      await sock.sendMessage(me, {
+        audio: buffer,
+        mimetype: media.mimetype || 'audio/ogg; codecs=opus',
+        ptt: !!media.ptt
+      });
+      await sock.sendMessage(me, { text: note });
+    }
+  } catch (e) {
+    logger?.error?.(`[VV] send failed: ${e.message}`);
+    return reply('❌ Downloaded but could not forward to your chat.');
   }
 
   await reply('📥 Saved to your private chat.');
 }
 
 module.exports = [
-  { command: 'vv', category: 'owner', description: 'Save a view-once photo/video/voice note to your private chat', usage: '.vv (reply to it)', run: reveal },
-  { command: 'viewonce', category: 'owner', description: 'Same as .vv', usage: '.viewonce (reply to it)', run: reveal }
+  {
+    command: 'vv',
+    aliases: ['viewonce', 'retrieve'],
+    category: 'owner',
+    description: 'Save a view-once photo/video/voice note to your private chat',
+    usage: '.vv (reply to it)',
+    run: reveal
+  }
 ];
