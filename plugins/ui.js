@@ -3,6 +3,16 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 
+/* ── IMAGES (edit here) ───────────────────────────────────────
+   Used as the background of every card and as the fallback
+   picture. They live in this file on purpose, so a dead link
+   in your config can never break .alive or .repo again.       */
+const IMAGES = {
+  menu:  'https://files.catbox.moe/lusgnl.jpg',
+  alive: 'https://files.catbox.moe/maj8xu.jpg',
+  repo:  'https://files.catbox.moe/maj8xu.jpg'
+};
+
 /* ════════════════════════════════════════════════════════════
    0.  OPTIONAL IMAGE CARDS
    Install once:   npm i @napi-rs/canvas
@@ -48,9 +58,11 @@ function ensureFonts() {
 }
 
 const bgCache = new Map();
+const bgFailed = new Map();
 async function loadBg(src) {
   if (!src || !canvasLib) return null;
   if (bgCache.has(src)) return bgCache.get(src);
+  if (Date.now() - (bgFailed.get(src) || 0) < 120000) return null; // retry after 2 min
   let img = null;
   try {
     let buf;
@@ -63,7 +75,7 @@ async function loadBg(src) {
     }
     img = await canvasLib.loadImage(buf);
   } catch (_) { /* no background image, gradient only */ }
-  bgCache.set(src, img);
+  if (img) bgCache.set(src, img); else bgFailed.set(src, Date.now());
   return img;
 }
 
@@ -100,7 +112,7 @@ function spaced(c, text, x, y, sp) {
  * Render a 1200x675 dashboard card. Returns a JPEG Buffer or null.
  * spec: { tag, badge, title, raw, subtitle, chips:[[label,value]..4], bar:{left,right,pct}, footerL, footerR }
  */
-async function renderCard(t, spec, bgSrc) {
+async function renderCardInner(t, spec, bgSrc) {
   if (!canvasLib) return null;
   try {
     const fontsOk = await ensureFonts();
@@ -226,6 +238,14 @@ async function renderCard(t, spec, bgSrc) {
     return null;
   }
 }
+
+/** Never let a slow render block a reply: give up after 10s and use the text UI */
+const renderCard = (t, spec, bg) =>
+  Promise.race([renderCardInner(t, spec, bg), new Promise(r => setTimeout(() => r(null), 10000))]);
+
+/* warm up fonts + background images at startup so the first command is fast */
+ensureFonts();
+[IMAGES.menu, IMAGES.alive, IMAGES.repo].forEach(u => loadBg(u));
 
 /* ════════════════════════════════════════════════════════════
    1.  THEME ENGINE  (text UI, used for captions and fallbacks)
@@ -473,11 +493,17 @@ function nowParts(tz) {
 
 /** Send an image (URL string or Buffer) with caption, then an optional follow-up text. */
 async function sendImage(sock, from, img, caption, extra, contextInfo) {
-  await sock.sendMessage(from, {
-    image: Buffer.isBuffer(img) ? img : { url: img },
-    caption,
-    ...(contextInfo ? { contextInfo } : {})
-  });
+  try {
+    await sock.sendMessage(from, {
+      image: Buffer.isBuffer(img) ? img : { url: img },
+      caption,
+      ...(contextInfo ? { contextInfo } : {})
+    });
+  } catch (e) {
+    // image failed (bad URL, network): still answer with text so the command never goes silent
+    console.error('[main] image send failed:', e && e.message);
+    await sock.sendMessage(from, { text: caption });
+  }
   if (extra) await sock.sendMessage(from, { text: extra });
 }
 
@@ -485,7 +511,7 @@ async function sendImage(sock, from, img, caption, extra, contextInfo) {
    3.  PLUGINS
    ════════════════════════════════════════════════════════════ */
 
-module.exports = [
+const PLUGINS = [
   /* ============ MENU ============ */
   {
     command: 'menu',
@@ -522,12 +548,12 @@ module.exports = [
           title: label, subtitle: `${list.length} commands available`,
           chips: [['COMMANDS', list.length], ['PREFIX', config.prefix], ['THEME', Object.keys(THEMES).find(k => THEMES[k] === t).toUpperCase()]],
           footerL: `© 2026 ${owner(config)}`, footerR: repoShort(config)
-        }, config.images.menu);
+        }, IMAGES.menu);
         return sendImage(
-          sock, from, card || config.images.menu,
+          sock, from, card || IMAGES.menu,
           card ? `_${label} commands_\n${ghLine(config)}` : t.wrap(t.banner(config, `${label} · ${list.length} commands`)),
           t.wrap(t.panel(label, rows)) + '\n' + t.wrap(t.sig(config)),
-          linkCtx(config, `${config.botName} · ${label}`, 'Tap to open GitHub', config.images.menu)
+          linkCtx(config, `${config.botName} · ${label}`, 'Tap to open GitHub', IMAGES.menu)
         );
       }
 
@@ -545,7 +571,7 @@ module.exports = [
           pct: rank.pct
         },
         footerL: `© 2026 ${owner(config)}`, footerR: repoShort(config)
-      }, config.images.menu);
+      }, IMAGES.menu);
 
       const greeting = `_${greet}${pushName ? ', ' + pushName : ''}. Pick a command below._\n${ghLine(config)}`;
       const caption = card
@@ -574,8 +600,8 @@ module.exports = [
         `\n_${config.prefix}menu <category> for descriptions · ${config.prefix}theme to change style_\n` +
         t.wrap(t.sig(config));
 
-      await sendImage(sock, from, card || config.images.menu, caption, body,
-        linkCtx(config, `${config.botName} · Command Menu`, `${plugins.size} commands · Tap for GitHub`, config.images.menu));
+      await sendImage(sock, from, card || IMAGES.menu, caption, body,
+        linkCtx(config, `${config.botName} · Command Menu`, `${plugins.size} commands · Tap for GitHub`, IMAGES.menu));
     }
   },
 
@@ -602,7 +628,7 @@ module.exports = [
         tag: 'THEME SAVED', title: pick, subtitle: t.label.split('·')[1].trim(),
         chips: [['STYLE', pick.toUpperCase()], ['PREFIX', config.prefix]],
         footerL: `© 2026 ${owner(config)}`, footerR: `${config.prefix}menu to preview`
-      }, config.images.menu);
+      }, IMAGES.menu);
       if (card) return sendImage(sock, from, card, `_Saved. Send ${config.prefix}menu to see it._`);
       await reply(t.wrap(t.banner(config, `THEME · ${pick.toUpperCase()}`)) + `\n_Saved. Send ${config.prefix}menu to see it._`);
     }
@@ -631,7 +657,7 @@ module.exports = [
         chips: [['UPTIME', uptime], ['COMMANDS', plugins.size], ['BOT RAM', `${memMB()} MB`], ['HOST', host]],
         bar: { left: `Server memory`, right: `${Math.round(ram)}% used`, pct: ram },
         footerL: `© 2026 ${owner(config)}`, footerR: repoShort(config)
-      }, config.images.alive);
+      }, IMAGES.alive);
 
       const greeting = `_${greet}${pushName ? ', ' + pushName : ''}. Send ${config.prefix}menu to begin._\n${ghLine(config)}`;
       const caption = card
@@ -651,8 +677,8 @@ module.exports = [
           t.panel('YOU', [t.kv('Rank', rank.name), t.kv('Used', `${myCmds} cmds`)])
         ) + '\n' + t.wrap(t.sig(config));
 
-      await sendImage(sock, from, card || config.images.alive, caption, extra,
-        linkCtx(config, `${config.botName} · Online`, `Uptime ${uptime} · Tap for GitHub`, config.images.alive));
+      await sendImage(sock, from, card || IMAGES.alive, caption, extra,
+        linkCtx(config, `${config.botName} · Online`, `Uptime ${uptime} · Tap for GitHub`, IMAGES.alive));
     }
   },
 
@@ -676,7 +702,7 @@ module.exports = [
         chips: [['QUALITY', quality], ['CPU LOAD', os.loadavg()[0].toFixed(2)], ['BOT RAM', `${memMB()} MB`]],
         bar: { left: 'Signal strength', right: `${Math.round(score)}%`, pct: score },
         footerL: `© 2026 ${owner(config)}`, footerR: config.botName
-      }, config.images.menu) : null;
+      }, IMAGES.menu) : null;
 
       if (card) return sendImage(sock, from, card, `_${quality} · ${latency} ms_`);
 
@@ -719,7 +745,7 @@ module.exports = [
         chips: [['DAYS', d], ['HOURS', h], ['MINUTES', m], ['SINCE', started]],
         bar: { left: `Next milestone · ${next ? next[0] : 'all cleared'}`, right: `${Math.floor(pct)}%`, pct },
         footerL: `© 2026 ${owner(config)}`, footerR: config.botName
-      }, config.images.menu) : null;
+      }, IMAGES.menu) : null;
 
       if (card) return sendImage(sock, from, card, `_Online since ${started}_`);
 
@@ -746,7 +772,7 @@ module.exports = [
         tag: 'Open source', title: config.botName, subtitle: 'GitHub repository',
         chips: [['STAR', `${config.prefix}star`], ['FORK', `${config.prefix}fork`], ['ISSUES', `${config.prefix}issues`]],
         footerL: `© 2026 ${owner(config)}`, footerR: repoShort(config)
-      }, config.images.banner || config.images.menu);
+      }, IMAGES.repo);
 
       const caption =
         (card ? '' : t.wrap(t.banner(config, 'OPEN SOURCE') + '\n\n' + t.panel('QUICK ACTIONS', [
@@ -755,11 +781,8 @@ module.exports = [
         `*Repository*\n${repo}\n\n*Star*  ${repo}/stargazers\n*Fork*  ${repo}/fork\n*Issues*  ${repo}/issues\n\n` +
         `_Every star keeps the updates coming._\n` + t.wrap(t.sig(config));
 
-      await sock.sendMessage(from, {
-        image: card || { url: config.images.banner || config.images.menu },
-        caption,
-        contextInfo: linkCtx(config, `${config.botName} · GitHub`, `By ${owner(config)} · Tap to open`, config.images.alive)
-      });
+      await sendImage(sock, from, card || IMAGES.repo, caption, null,
+        linkCtx(config, `${config.botName} · GitHub`, `By ${owner(config)} · Tap to open`, IMAGES.alive));
     }
   },
 
@@ -785,3 +808,15 @@ module.exports = [
     }
   }
 ];
+
+/** Any error is logged and answered instead of leaving the chat silent */
+const guard = (run) => async (ctx) => {
+  try {
+    await run(ctx);
+  } catch (e) {
+    console.error('[main] command failed:', e && e.stack || e);
+    try { await ctx.reply(`Something went wrong: ${clip((e && e.message) || 'unknown error', 80)}`); } catch (_) { /* ignore */ }
+  }
+};
+
+module.exports = PLUGINS.map(p => ({ ...p, run: guard(p.run) }));
