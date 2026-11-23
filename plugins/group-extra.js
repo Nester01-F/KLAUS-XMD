@@ -1,16 +1,5 @@
 module.exports = [
   {
-    command: 'welcome',
-    description: 'Toggle welcome messages',
-    category: 'group',
-    admin: true,
-    async run({ sock, from, reply, args, isGroup }) {
-      if (!isGroup) return reply('👥 Group only.');
-      // simple toggle demo (hook into DB in prod)
-      reply(`👋 Welcome messages ${args[0] === 'off' ? 'disabled' : 'enabled'}.`);
-    }
-  },
-  {
     command: 'mute',
     description: 'Mute group',
     category: 'group',
