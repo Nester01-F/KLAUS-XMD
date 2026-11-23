@@ -6,14 +6,12 @@
  * GAMES   : rps, slots
  * SEARCH  : book, songinfo, holidays, quake, stackoverflow, pypi, apod
  * TOOLS   : synonym, antonym, rhyme, color, convert, age, bmi, zodiac, hash, dns
- * MAIN    : uptime
  *
  * Optional env var: NASA_API_KEY (for .apod; falls back to NASA's shared DEMO_KEY)
  */
 
 const crypto = require('crypto');
 const dnsp = require('dns').promises;
-const os = require('os');
 
 const TIMEOUT = 12000;
 
@@ -512,22 +510,6 @@ module.exports = [
         ok(aaaa) ? `6️⃣ AAAA : ${aaaa.value.slice(0, 2).join(', ')}` : '',
         ok(mx) ? `📧 MX : ${[...mx.value].sort((x, y) => x.priority - y.priority).slice(0, 3).map(m => m.exchange).join(', ')}` : '',
         ok(ns) ? `🗂️ NS : ${ns.value.slice(0, 3).join(', ')}` : ''
-      ]));
-    }
-  },
-
-  /* ===== MAIN ===== */
-  {
-    command: 'uptime', category: 'main', description: 'Bot uptime and server info', usage: '.uptime',
-    run: async ({ reply, plugins }) => {
-      const up = Math.floor(process.uptime());
-      const d = Math.floor(up / 86400), h = Math.floor((up % 86400) / 3600), m = Math.floor((up % 3600) / 60), s = up % 60;
-      await reply(box('⏱️ UPTIME', [
-        `🟢 Running : ${d}d ${h}h ${m}m ${s}s`,
-        `🧠 Memory : ${(process.memoryUsage().rss / 1024 / 1024).toFixed(0)} MB`,
-        `⚙️ Node : ${process.version}`,
-        `🖥️ Host : ${os.platform()} ${os.arch()} (${os.cpus().length} CPU)`,
-        plugins ? `📦 Commands : ${plugins.size}` : ''
       ]));
     }
   }

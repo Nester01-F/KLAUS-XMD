@@ -6,6 +6,7 @@ const MAX_BROADCAST_CHARS = 2000;
 module.exports = [
   {
     command: 'dev',
+    aliases: ['owner'],
     description: 'Show developer',
     category: 'owner',
     async run({ sock, from, msg, reply, config }) {
