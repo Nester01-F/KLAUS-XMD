@@ -13,6 +13,7 @@
     "@chirag127/keyless-kilo": "^0.3.0",
     "@distube/ytdl-core": "^5.2.1",
     "@hapi/boom": "^10.0.1",
+    "@napi-rs/canvas": "^1.2.0",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "axios": "^1.7.7",
     "cheerio": "^1.0.0",
