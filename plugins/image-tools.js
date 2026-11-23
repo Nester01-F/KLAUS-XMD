@@ -1,3 +1,4 @@
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const axios = require('axios');
 
 module.exports = [
@@ -8,7 +9,7 @@ module.exports = [
     async run({ sock, msg, from, reply }) {
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       try {
         const fd = new (require('form-data'))();
         fd.append('image_file', buf, { filename: 'img.png' });
@@ -28,7 +29,7 @@ module.exports = [
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf).blur(12).toBuffer();
       await sock.sendMessage(from, { image: out, caption: '🌫️ Blurred by KLAUS XMD' }, { quoted: msg });
     }

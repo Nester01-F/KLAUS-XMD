@@ -1,20 +1,15 @@
-const { getBuffer } = require('../lib/helper');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
-async function makeSticker(sock, msg, quoted, packName = 'KLAUS XMD', author = 'Warrior Felix') {
-  const source = quoted ? { message: quoted } : msg;
-  const buf = await sock.downloadMediaMessage(source, 'buffer', {}, {});
-
-  // Determine mimetype
-  const m = quoted || msg.message;
-  const isVideo = !!m.videoMessage;
-  const mimetype = isVideo ? 'video/mp4' : 'image/jpeg';
-
-  // Use Baileys native sticker support
-  return sock.sendMessage(msg.key.remoteJid, {
+async function makeSticker(sock, msg, quoted, from) {
+  const source = quoted ? { message: quoted, key: msg.key } : msg;
+  const buf = await downloadMediaMessage(source, 'buffer', {}, {
+    logger: undefined,
+    reuploadRequest: sock.updateMediaMessage
+  });
+  await sock.sendMessage(from, {
     sticker: buf,
-    mimetype,
-    packname: packName,
-    author
+    packname: 'KLAUS XMD',
+    author: 'Warrior Felix'
   }, { quoted: msg });
 }
 
@@ -27,14 +22,11 @@ module.exports = [
     async run({ sock, msg, from, reply }) {
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       const direct = msg.message.imageMessage || msg.message.videoMessage;
-
       if (!quoted?.imageMessage && !quoted?.videoMessage && !direct) {
-        return reply('📸 Reply to an image/video or send one with caption `.sticker`');
+        return reply('📸 Reply to an image/video or send one with `.sticker` caption');
       }
-
-      await reply('🎨 Creating sticker...');
       try {
-        await makeSticker(sock, msg, quoted, 'KLAUS XMD', 'Warrior Felix');
+        await makeSticker(sock, msg, quoted, from);
       } catch (e) {
         reply(`❌ Sticker failed: ${e.message}`);
       }
@@ -48,13 +40,14 @@ module.exports = [
     async run({ sock, msg, from, reply }) {
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.stickerMessage) return reply('🖼️ Reply to a sticker.');
-
       try {
-        const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
-        await sock.sendMessage(from, {
-          image: buf,
-          caption: '✅ By KLAUS XMD'
-        }, { quoted: msg });
+        const buf = await downloadMediaMessage(
+          { message: quoted, key: msg.key },
+          'buffer',
+          {},
+          { logger: undefined, reuploadRequest: sock.updateMediaMessage }
+        );
+        await sock.sendMessage(from, { image: buf, caption: '✅ KLAUS XMD' }, { quoted: msg });
       } catch (e) {
         reply(`❌ Failed: ${e.message}`);
       }

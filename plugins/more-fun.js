@@ -1,3 +1,4 @@
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const axios = require('axios');
 
 module.exports = [
@@ -9,7 +10,7 @@ module.exports = [
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf)
         .modulate({ brightness: 0.7, saturation: 0 })
         .tint({ r: 100, g: 0, b: 0 })
@@ -25,7 +26,7 @@ module.exports = [
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf).blur(20).toBuffer();
       await sock.sendMessage(from, { image: out, caption: '🌫️ Blurred' }, { quoted: msg });
     }
@@ -38,7 +39,7 @@ module.exports = [
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf).negate().toBuffer();
       await sock.sendMessage(from, { image: out, caption: '🔄 Inverted' }, { quoted: msg });
     }
@@ -52,7 +53,7 @@ module.exports = [
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf).grayscale().toBuffer();
       await sock.sendMessage(from, { image: out, caption: '⚫ Grayscale' }, { quoted: msg });
     }
@@ -65,7 +66,7 @@ module.exports = [
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf)
         .modulate({ brightness: 0.9, saturation: 0 })
         .tint({ r: 180, g: 140, b: 80 })

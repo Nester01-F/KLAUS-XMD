@@ -1,3 +1,4 @@
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { getBuffer } = require('../lib/helper');
 
 module.exports = [
@@ -9,7 +10,7 @@ module.exports = [
     async run({ sock, msg, from, reply }) {
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.videoMessage) return reply('🎬 Reply to a video.');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       await sock.sendMessage(from, { audio: buf, mimetype: 'audio/mp4' }, { quoted: msg });
     }
   },
@@ -32,7 +33,7 @@ module.exports = [
     async run({ sock, msg, from, reply }) {
       const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted?.videoMessage) return reply('🎬 Reply to a video.');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       await sock.sendMessage(from, { video: buf, gifPlayback: true, caption: '🎞️ KLAUS XMD' }, { quoted: msg });
     }
   },
@@ -45,7 +46,7 @@ module.exports = [
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const size = parseInt(args[0]) || 500;
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf).resize(size, size).toBuffer();
       await sock.sendMessage(from, { image: out, caption: `✅ Resized to ${size}x${size}` }, { quoted: msg });
     }
@@ -59,7 +60,7 @@ module.exports = [
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const deg = parseInt(args[0]) || 90;
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf).rotate(deg).toBuffer();
       await sock.sendMessage(from, { image: out, caption: `🔃 Rotated ${deg}°` }, { quoted: msg });
     }
@@ -73,7 +74,7 @@ module.exports = [
       if (!quoted?.imageMessage) return reply('🖼️ Reply to an image.');
       const quality = Math.min(Math.max(parseInt(args[0]) || 70, 10), 100);
       const sharp = require('sharp');
-      const buf = await sock.downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
+      const buf = await downloadMediaMessage({ message: quoted }, 'buffer', {}, {});
       const out = await sharp(buf).jpeg({ quality }).toBuffer();
       await sock.sendMessage(from, {
         image: out, caption: `✅ Compressed to ${quality}%`
