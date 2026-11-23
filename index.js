@@ -169,12 +169,25 @@ async function sendConnectedMessage(sock) {
   if (connectedMessageSent) return; // once per start, not on every reconnect
   connectedMessageSent = true;
 
-  const caption = ui.statusCard({
-    title: '✅ CONNECTED',
-    config,
-    plugins,
-    startedAt: startTime
-  });
+  const up = Math.floor((Date.now() - startTime) / 1000);
+  const d = Math.floor(up / 86400);
+  const h = Math.floor((up % 86400) / 3600);
+  const m = Math.floor((up % 3600) / 60);
+
+  const caption =
+`╔══════════════════════════════════════╗
+║   ⚡ *${config.botName}* ⚡          ║
+╚══════════════════════════════════════╝
+
+┏━━━━━「 🟢 STATUS 」━━━━━┓
+┃ ✅ State     : *ONLINE*
+┃ ⏱️ Uptime    : *${d}d ${h}h ${m}m*
+┃ 📦 Commands  : *${plugins.size}*
+┃ ⚙️ Prefix    : \`${config.prefix}\`
+┃ 💓 KeepAlive : *ACTIVE*
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+
+> _© 2026 ${config.ownerName || 'Warrior Felix'}_`;
 
   const selfJid = jidNormalizedUser(sock.user.id);
   await sendWithFallback(sock, selfJid, caption);

@@ -10,7 +10,6 @@
 
 const util = require('util');
 const { downloadContentFromMessage, normalizeMessageContent, jidNormalizedUser } = require('@whiskeysockets/baileys');
-const { panel } = require('../lib/ui');
 
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 

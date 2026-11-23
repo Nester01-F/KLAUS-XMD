@@ -1,4 +1,4 @@
-const { BANNER, panel } = require('../lib/ui');
+
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const MAX_BROADCAST_CHARS = 2000;
