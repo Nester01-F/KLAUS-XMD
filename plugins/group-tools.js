@@ -106,19 +106,6 @@ module.exports = [
     }
   },
   {
-    command: 'poll',
-    description: 'Create a poll',
-    category: 'group',
-    async run({ sock, from, reply, text, msg }) {
-      const parts = text.split('|').map(s => s.trim()).filter(Boolean);
-      if (parts.length < 3) return reply('📊 Example: .poll Best fruit? | Apple | Banana | Mango');
-      const [question, ...options] = parts;
-      await sock.sendMessage(from, {
-        poll: { name: question, values: options, selectableCount: 1 }
-      }, { quoted: msg });
-    }
-  },
-  {
     command: 'ginfo2',
     aliases: ['ginvite'],
     description: 'Get group invite link',

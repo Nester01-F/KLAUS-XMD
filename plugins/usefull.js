@@ -3,21 +3,6 @@ const moment = require('moment-timezone');
 
 module.exports = [
   {
-    command: 'uptime',
-    description: 'Bot uptime',
-    category: 'tools',
-    async run({ reply }) {
-      const { getDB } = require('../lib/database');
-      const db = getDB();
-      const sec = Math.floor((Date.now() - db.stats.startedAt) / 1000);
-      const d = Math.floor(sec / 86400);
-      const h = Math.floor((sec % 86400) / 3600);
-      const m = Math.floor((sec % 3600) / 60);
-      const s = sec % 60;
-      reply(`⏱️ *UPTIME*\n${d}d ${h}h ${m}m ${s}s`);
-    }
-  },
-  {
     command: 'timezones',
     aliases: ['tz'],
     description: 'Current time in major cities',
