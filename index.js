@@ -39,7 +39,7 @@ if (String(config.sessionName || '').length > 60) {
   config.sessionName = 'session';
 }
 const logger = require('./lib/logger');
-const ui = require('./lib/ui');
+
 const database = require('./lib/database');
 const { loadDB, bumpStat } = database;
 // Fallback so a missing export can never crash command handling
