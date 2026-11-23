@@ -9,12 +9,12 @@ module.exports = [
         image: { url: config.images.dev },
         caption:
 `╭━〔 *DEVELOPER* 〕━⬣
-┃ 👤 Name   : *KLAUS TECH*
+┃ 👤 Name   : *Warrior Felix*
 ┃ 🧠 Bot    : *${config.botName}*
 ┃ ⚙️ Engine : *Baileys*
 ┃ 🌐 Status : *Active*
 ╰━━━━━━━━━━━━━━━━⬣
-> _Built with ❤️ by KLAUS TECH_`
+> _Built with ❤️ by Warrior Felix_`
       });
     }
   },

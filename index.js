@@ -39,6 +39,7 @@ if (String(config.sessionName || '').length > 60) {
   config.sessionName = 'session';
 }
 const logger = require('./lib/logger');
+const ui = require('./lib/ui');
 const database = require('./lib/database');
 const { loadDB, bumpStat } = database;
 // Fallback so a missing export can never crash command handling
@@ -54,6 +55,7 @@ const { handleCall } = require('./lib/callHandler');
 const { saveStatus } = require('./lib/statusSaver');
 
 const plugins = new Map();
+const aliasMap = new Map(); // alias -> plugin (so .help works for .menu, etc.)
 let reconnectAttempts = 0;
 let startTime = Date.now();
 
@@ -61,27 +63,6 @@ let startTime = Date.now();
 let loginChoice = null;   // '1' = QR, '2' = pairing code
 let pairingPhone = null;
 let sessionRestored = false;
-
-/* ---------- 🔐 Normalize owner numbers (handles +, spaces, @s.whatsapp.net, :device) ---------- */
-function normalizeNumber(raw) {
-  return String(raw || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-}
-
-function buildOwnerNumbers(cfg) {
-  const sources = [];
-  if (Array.isArray(cfg.owner) && cfg.owner.length) sources.push(...cfg.owner);
-  if (cfg.ownerNumber) sources.push(cfg.ownerNumber);
-  if (process.env.OWNER_NUMBER) sources.push(process.env.OWNER_NUMBER);
-  return [...new Set(sources.map(normalizeNumber).filter(Boolean))];
-}
-
-const OWNER_NUMBERS = buildOwnerNumbers(config);
-logger.info(`👑 Owner numbers: ${OWNER_NUMBERS.join(', ') || '(none)'}`);
-
-function isOwnerSender(sender) {
-  const n = normalizeNumber(sender);
-  return n && OWNER_NUMBERS.includes(n);
-}
 
 /* ---------- Restore a creds-only SESSION_ID into <session>/creds.json ---------- */
 function restoreCredsFromEnv(dir) {
@@ -109,7 +90,11 @@ function loadPlugins() {
     try {
       const plugin = require(path.join(dir, file));
       const arr = Array.isArray(plugin) ? plugin : [plugin];
-      arr.forEach(p => p?.command && plugins.set(p.command.toLowerCase(), p));
+      arr.forEach(p => {
+        if (!p?.command) return;
+        plugins.set(p.command.toLowerCase(), p);
+        (Array.isArray(p.aliases) ? p.aliases : []).forEach(a => aliasMap.set(String(a).toLowerCase(), p));
+      });
       logger.info(`Loaded plugin: ${file}`);
     } catch (e) {
       logger.error(`Plugin ${file} failed: ${e.message}`);
@@ -163,7 +148,13 @@ let connectedMessageSent = false;
 
 async function sendWithFallback(sock, jid, caption) {
   try {
-    await sock.sendMessage(jid, { image: { url: config.images.alive }, caption });
+    if (caption.length <= 1000) {
+      await sock.sendMessage(jid, { image: { url: config.images.alive }, caption });
+    } else {
+      // Long cards go as image + separate text so WhatsApp never cuts them off
+      await sock.sendMessage(jid, { image: { url: config.images.alive } });
+      await sock.sendMessage(jid, { text: caption });
+    }
   } catch (e) {
     logger.warn('Alive image failed, sending text instead: ' + e.message);
     try {
@@ -177,22 +168,13 @@ async function sendWithFallback(sock, jid, caption) {
 async function sendConnectedMessage(sock) {
   if (connectedMessageSent) return; // once per start, not on every reconnect
   connectedMessageSent = true;
-  const up = Math.floor((Date.now() - startTime) / 1000);
-  const d = Math.floor(up / 86400);
-  const h = Math.floor((up % 86400) / 3600);
-  const m = Math.floor((up % 3600) / 60);
 
-  const caption =
-`╭━━〔 *${config.botName}* 〕━━⬣
-┃ ✅ Status  : *ONLINE*
-┃ ⏱️ Uptime  : *${d}d ${h}h ${m}m*
-┃ 📦 Commands: *${plugins.size}*
-┃ ⚙️ Prefix  : *${config.prefix}*
-┃ 🔐 Session : *Active*
-┃ 💓 KeepAlive: *ON*
-╰━━━━━━━━━━━━━━━━━━⬣
-
-> _KLAUS XMD © Warrior Felix_`;
+  const caption = ui.statusCard({
+    title: '✅ CONNECTED',
+    config,
+    plugins,
+    startedAt: startTime
+  });
 
   const selfJid = jidNormalizedUser(sock.user.id);
   await sendWithFallback(sock, selfJid, caption);
@@ -355,37 +337,6 @@ async function startBot() {
       : jidNormalizedUser(msg.key.participant || msg.key.remoteJid);
     const isGroup = from.endsWith('@g.us');
 
-    // ---------- 👁️ AntiViewOnce Auto-Forward ----------
-    if (msg.message?.viewOnceMessageV2 || msg.message?.viewOnceMessage) {
-      try {
-        const { getBot } = require('./lib/database');
-        const bot = getBot();
-
-        if (bot.antiviewonce && !fromMe) {
-          const ownerJid = config.owner[0] + '@s.whatsapp.net';
-          const senderName = sender.split('@')[0];
-          const inner = msg.message.viewOnceMessageV2?.message || msg.message.viewOnceMessage?.message;
-
-          if (inner?.imageMessage) {
-            const buf = await sock.downloadMediaMessage(msg, 'buffer', {}, {});
-            await sock.sendMessage(ownerJid, {
-              image: buf,
-              caption: `👁️ *AutoViewOnce*\nFrom: @${senderName}\nChat: ${from}`
-            }, { mentions: [sender] });
-          } else if (inner?.videoMessage) {
-            const buf = await sock.downloadMediaMessage(msg, 'buffer', {}, {});
-            await sock.sendMessage(ownerJid, {
-              video: buf,
-              caption: `👁️ *AutoViewOnce*\nFrom: @${senderName}\nChat: ${from}`
-            }, { mentions: [sender] });
-          }
-        }
-      } catch (e) {
-        logger.warn('AntiViewOnce failed: ' + e.message);
-      }
-    }
-
-    // ---------- Extract body ----------
     const body =
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text ||
@@ -404,20 +355,18 @@ async function startBot() {
         if (handled) return;
       } catch (e) { logger.error('Guard error: ' + e.message); }
     }
+
     if (!body.startsWith(config.prefix)) return;
 
     const args = body.slice(config.prefix.length).trim().split(/ +/);
     const cmd = args.shift().toLowerCase();
     const text = args.join(' ');
 
-    const plugin = plugins.get(cmd);
+    const plugin = plugins.get(cmd) || aliasMap.get(cmd);
     logger.info(`Command "${cmd}" from ${sender}${plugin ? '' : ' (no such command)'}`);
     if (!plugin) return;
 
-    // ---------- 🔐 ROBUST OWNER CHECK ----------
-    const isOwner = isOwnerSender(sender);
-    if (isOwner) logger.info(`👑 Owner detected: ${normalizeNumber(sender)} → ${cmd}`);
-
+    const isOwner = config.owner.includes(sender.split('@')[0]);
     bumpStat('commands');
     addCommandUse(sender);
 
@@ -432,10 +381,8 @@ async function startBot() {
         config, plugins, logger
       });
     } catch (e) {
-      logger.error(`Cmd ${cmd} error: ${e.message}\n${e.stack}`);
-      sock.sendMessage(from, {
-        text: `💥 *${cmd}* failed\n\n\`\`\`${e.message}\`\`\``
-      }, { quoted: msg });
+      logger.error(`Cmd ${cmd} error: ${e.message}`);
+      sock.sendMessage(from, { text: config.messages.error }, { quoted: msg });
     }
   });
 }

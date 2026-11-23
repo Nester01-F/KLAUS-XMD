@@ -1,4 +1,5 @@
-const { getDB, getLeaderboard } = require('../lib/database');
+const database = require('../lib/database');
+const { BANNER, fmtUptime, hostName, panel } = require('../lib/ui');
 const os = require('os');
 
 const CATEGORY_META = {
@@ -25,28 +26,7 @@ const CATEGORY_META = {
   other:       { icon: '📦', label: 'OTHER',           color: '⚪' }
 };
 
-/* ---------- Small clean banner (fits mobile) ---------- */
-const BANNER = `
-╔═══════════════════════════════════════╗
-║   ╔═╗ ╦  ╔═╗ ╦ ╦ ╔═╗   ╦ ╦ ╔╦╗ ╔╦╗    ║
-║   ╠═╣ ║  ╠═╣ ║ ║ ╚═╗   ╚╦╝ ║║║  ║║    ║
-║   ╩ ╩ ╩  ╩ ╩ ╚═╝ ╚═╝    ╩  ╩ ╩ ═╩╝    ║
-║                                       ║
-║   ⚡ POWERED BY WARRIOR FELIX ⚡          ║
-║   🇰🇪 MADE IN KENYA · v1.0             ║
-╚═══════════════════════════════════════╝`;
-
 /* ---------- Helpers ---------- */
-function fmtUptime(ms) {
-  const sec = Math.floor(ms / 1000);
-  const d = Math.floor(sec / 86400);
-  const h = Math.floor((sec % 86400) / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  if (d) return `${d}d ${h}h`;
-  if (h) return `${h}h ${m}m`;
-  return `${m}m`;
-}
-
 function userRank(count) {
   if (count >= 500) return '💎 LEGEND';
   if (count >= 200) return '👑 ELITE';
@@ -61,13 +41,23 @@ function progressBar(pct, width = 10) {
   return '█'.repeat(filled) + '░'.repeat(width - filled);
 }
 
-function fmtBytes(bytes) {
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
-  if (bytes < 1024 * 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-  return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+// Works whether or not lib/database.js has getLeaderboard()
+function leaderboard() {
+  if (typeof database.getLeaderboard === 'function') {
+    try { return database.getLeaderboard(); } catch { /* fall through */ }
+  }
+  const users = (database.getDB && database.getDB().users) || {};
+  const commands = {};
+  for (const [jid, u] of Object.entries(users)) commands[jid] = u.commandCount || 0;
+  return { commands };
 }
 
-/* ---------- Full menu ---------- */
+function startedAt() {
+  const db = database.getDB ? database.getDB() : null;
+  return db?.stats?.startedAt || Date.now() - process.uptime() * 1000;
+}
+
+/* ---------- Full menu: returns the image caption and the text body ---------- */
 function buildFullMenu(plugins, config, sender) {
   const cats = {};
   for (const [name, p] of plugins) {
@@ -75,105 +65,78 @@ function buildFullMenu(plugins, config, sender) {
     (cats[c] = cats[c] || []).push(name);
   }
 
-  const db = getDB();
-  const lb = getLeaderboard();
-  const myCmds = lb.commands[sender] || 0;
-  const uptime = fmtUptime(Date.now() - db.stats.startedAt);
+  const myCmds = leaderboard().commands?.[sender] || 0;
+  const uptime = fmtUptime(Date.now() - startedAt());
   const memMB = (process.memoryUsage().rss / 1024 / 1024).toFixed(1);
 
   const ownerName = config.ownerName || 'Warrior Felix';
   const ownerNumber = config.owner?.[0] || '254701881604';
   const repo = config.repo || 'https://github.com/Nester01-F/KLAUS-XMD';
 
-  let txt = '';
+  /* ----- caption (stays under WhatsApp's image caption limit) ----- */
+  let caption = BANNER + '\n\n';
+  caption += panel('👑 DEVELOPER', [
+    ['👤 Name', `*${ownerName}*`],
+    ['📱 Contact', `+${ownerNumber}`],
+    ['🌍 Region', '🇰🇪 Kenya'],
+    '🔗 *GitHub*',
+    repo
+  ]);
+  caption += `\n\n⚙️ \`${config.prefix}\`  ·  📦 *${plugins.size}* commands  ·  ⏱️ *${uptime}*`;
 
-  // ═══ BANNER ═══
-  txt += BANNER + '\n\n';
+  /* ----- body (sent as a normal text message, no length problem) ----- */
+  let body = '';
 
-  // ═══ OWNER / DEV CARD ═══
-  txt += `┏━━━━━「 👑 DEVELOPER 」━━━━━┓\n`;
-  txt += `┃\n`;
-  txt += `┃  👤 Name    »  *${ownerName}*\n`;
-  txt += `┃  📱 Contact »  +${ownerNumber}\n`;
-  txt += `┃  🌍 Region  »  🇰🇪 Kenya\n`;
-  txt += `┃  🏢 Team    »  *WARRIOR FELIX*\n`;
-  txt += `┃\n`;
-  txt += `┃  🔗 *GitHub*\n`;
-  txt += `┃  ${repo}\n`;
-  txt += `┃\n`;
-  txt += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+  body += panel('📊 SYSTEM', [
+    ['⚙️ Prefix', `\`${config.prefix}\``],
+    ['📦 Commands', `*${plugins.size}*`],
+    ['⏱️ Uptime', `*${uptime}*`],
+    ['💾 Memory', `*${memMB} MB*`],
+    ['🖥️ Platform', `*${os.platform()} ${os.arch()}*`],
+    ['🟢 Node', `*${process.version}*`],
+    ['🌐 Host', `*${hostName()}*`]
+  ]) + '\n\n';
 
-  // ═══ SYSTEM STATS ═══
-  txt += `┏━━━━━「 📊 SYSTEM 」━━━━━┓\n`;
-  txt += `┃\n`;
-  txt += `┃  ⚙️  Prefix   »  \`${config.prefix}\`\n`;
-  txt += `┃  📦  Commands »  *${plugins.size}*\n`;
-  txt += `┃  ⏱️  Uptime   »  *${uptime}*\n`;
-  txt += `┃  💾  Memory   »  *${memMB} MB*\n`;
-  txt += `┃  🖥️  Platform »  *${os.platform()} ${os.arch()}*\n`;
-  txt += `┃  🟢  Node     »  *${process.version}*\n`;
-  txt += `┃  🌐  Host     »  *${process.env.DYNO || process.env.RAILWAY_ENVIRONMENT || 'Local'}*\n`;
-  txt += `┃\n`;
-  txt += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+  body += panel('👤 YOUR PROFILE', [
+    ['🎖️ Rank', `*${userRank(myCmds)}*`],
+    ['📈 Used', `*${myCmds}* commands`],
+    ['📊 Level', `${progressBar(Math.min(100, myCmds / 5))} ${Math.min(100, Math.floor(myCmds / 5))}%`]
+  ]) + '\n\n';
 
-  // ═══ YOUR PROFILE ═══
-  txt += `┏━━━━━「 👤 YOUR PROFILE 」━━━━━┓\n`;
-  txt += `┃\n`;
-  txt += `┃  🎖️  Rank     »  *${userRank(myCmds)}*\n`;
-  txt += `┃  📈  Used     »  *${myCmds}* commands\n`;
-  txt += `┃  📊  Level    »  ${progressBar(Math.min(100, myCmds / 5))} ${Math.min(100, Math.floor(myCmds / 5))}%\n`;
-  txt += `┃\n`;
-  txt += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
-
-  // ═══ CATEGORIES ═══
   const order = [
-    'main','download','ai','sticker','stickers','games',
-    'fun','text','tools','search','media','utility',
-    'info','status','leaderboard','group','admin',
-    'settings','automation','owner','other'
+    'main', 'download', 'ai', 'sticker', 'stickers', 'games',
+    'fun', 'text', 'tools', 'search', 'media', 'utility',
+    'info', 'status', 'leaderboard', 'group', 'admin',
+    'settings', 'automation', 'owner', 'other'
   ];
-
   const sortedCats = order.filter(c => cats[c]).concat(
     Object.keys(cats).filter(c => !order.includes(c))
   );
 
-  txt += `╔══════════════════════════════════════╗\n`;
-  txt += `║       📋 *COMMAND CATEGORIES*        ║\n`;
-  txt += `╚══════════════════════════════════════╝\n\n`;
+  body += `📋 *COMMAND CATEGORIES*\n\n`;
 
   for (const cat of sortedCats) {
-    if (!cats[cat]) continue;
     const meta = CATEGORY_META[cat] || { icon: '📦', label: cat.toUpperCase(), color: '⚪' };
     const cmds = cats[cat].sort();
 
-    txt += `┏━${meta.color}「 ${meta.icon} *${meta.label}* 」\n`;
-    txt += `┃\n`;
-
+    body += `┏━${meta.color}「 ${meta.icon} *${meta.label}* 」\n┃\n`;
     for (let i = 0; i < cmds.length; i += 2) {
       const a = `▸ ${config.prefix}${cmds[i]}`;
       const b = cmds[i + 1] ? `▸ ${config.prefix}${cmds[i + 1]}` : '';
-      txt += `┃  ${a.padEnd(18)}${b}\n`;
+      body += `┃  ${a.padEnd(18)}${b}\n`;
     }
-
-    txt += `┃\n`;
-    txt += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    body += `┃\n┗━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
   }
 
-  // ═══ FOOTER ═══
-  txt += `╔══════════════════════════════════════╗\n`;
-  txt += `║         💡 *QUICK TIPS*              ║\n`;
-  txt += `╠══════════════════════════════════════╣\n`;
-  txt += `║  ▸ \`.menu <cat>\` → drill down        ║\n`;
-  txt += `║  ▸ \`.top\`        → leaderboard       ║\n`;
-  txt += `║  ▸ \`.settings\`   → bot settings      ║\n`;
-  txt += `║  ▸ \`.ping\`       → test latency      ║\n`;
-  txt += `╚══════════════════════════════════════╝\n\n`;
+  body += `💡 *QUICK TIPS*\n`;
+  body += `▸ \`${config.prefix}menu <category>\` → drill down\n`;
+  body += `▸ \`${config.prefix}top\` → leaderboard\n`;
+  body += `▸ \`${config.prefix}settings\` → bot settings\n`;
+  body += `▸ \`${config.prefix}ping\` → test latency\n\n`;
+  body += `_⚡ ${config.botName} · © 2026 ${ownerName}_\n`;
+  body += `_🇰🇪 Made in Kenya · WARRIOR FELIX_`;
 
-  // ═══ SIGNATURE ═══
-  txt += `_⚡ KLAUS XMD · © 2026 ${ownerName}_\n`;
-  txt += `_🇰🇪 Made in Kenya · WARRIOR FELIX_`;
-
-  return txt;
+  return { caption, body };
 }
 
 /* ---------- Category drill-down ---------- */
@@ -187,10 +150,7 @@ function buildCategoryMenu(cat, plugins, config) {
   if (!list.length) return null;
   list.sort((a, b) => a.name.localeCompare(b.name));
 
-  let txt = '';
-  txt += `╔══════════════════════════════════════╗\n`;
-  txt += `║  ${meta.color} ${meta.icon} *${meta.label}* (${list.length})\n`;
-  txt += `╚══════════════════════════════════════╝\n\n`;
+  let txt = `${meta.color} ${meta.icon} *${meta.label}* (${list.length})\n\n`;
 
   for (const c of list) {
     txt += `▸ *${config.prefix}${c.name}*\n`;
@@ -202,6 +162,18 @@ function buildCategoryMenu(cat, plugins, config) {
   txt += `_Type \`${config.prefix}menu\` to see all categories_`;
 
   return txt;
+}
+
+function adCard(config, title, thumb) {
+  return {
+    externalAdReply: {
+      title,
+      body: `By ${config.ownerName || 'Warrior Felix'}`,
+      thumbnailUrl: thumb,
+      sourceUrl: config.repo || 'https://github.com/Nester01-F/KLAUS-XMD',
+      mediaType: 1
+    }
+  };
 }
 
 /* ---------- Plugin export ---------- */
@@ -219,37 +191,31 @@ module.exports = {
         const available = Object.keys(CATEGORY_META).join(', ');
         return reply(`❌ Unknown category: *${cat}*\n\nAvailable: ${available}`);
       }
-      return sock.sendMessage(from, {
-        image: { url: config.images.menu },
-        caption: catMenu,
-        contextInfo: {
-          externalAdReply: {
-            title: `${config.botName} — ${CATEGORY_META[cat]?.label || cat.toUpperCase()}`,
-            body: `By ${config.ownerName || 'Warrior Felix'}`,
-            thumbnailUrl: config.images.menu,
-            sourceUrl: config.repo || 'https://github.com/Nester01-F/KLAUS-XMD',
-            mediaType: 1
-          }
-        }
-      });
+      try {
+        await sock.sendMessage(from, {
+          image: { url: config.images.menu },
+          caption: catMenu.length <= 1000 ? catMenu : undefined,
+          contextInfo: adCard(config, `${config.botName} · ${CATEGORY_META[cat]?.label || cat.toUpperCase()}`, config.images.menu)
+        });
+        if (catMenu.length > 1000) await reply(catMenu);
+      } catch {
+        await reply(catMenu);
+      }
+      return;
     }
 
     // ─── Full menu ───
-    const fullMenu = buildFullMenu(plugins, config, sender);
-
-    // 🖼️ Send image + full caption (this is what shows the menu image)
-    await sock.sendMessage(from, {
-      image: { url: config.images.menu },
-      caption: fullMenu,
-      contextInfo: {
-        externalAdReply: {
-          title: `${config.botName} — Command Menu`,
-          body: `By ${config.ownerName || 'Warrior Felix'} · WARRIOR FELIX`,
-          thumbnailUrl: config.images.alive,
-          sourceUrl: config.repo || 'https://github.com/Nester01-F/KLAUS-XMD',
-          mediaType: 1
-        }
-      }
-    });
+    const { caption, body } = buildFullMenu(plugins, config, sender);
+    try {
+      await sock.sendMessage(from, {
+        image: { url: config.images.menu },
+        caption,
+        contextInfo: adCard(config, `${config.botName} · Command Menu`, config.images.alive)
+      });
+      await reply(body);
+    } catch {
+      // image failed (e.g. host down): send everything as text instead
+      await reply(caption + '\n\n' + body);
+    }
   }
 };
