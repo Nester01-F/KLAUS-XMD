@@ -19,8 +19,9 @@ module.exports = [
     }
   },
   {
-    command: 'guess',
-    description: 'Guess the number',
+    command: 'guessnum',
+    aliases: ['gnum'],
+    description: 'Guess a number between 1–100',
     category: 'games',
     async run({ reply, from }) {
       const num = Math.floor(Math.random() * 100) + 1;
