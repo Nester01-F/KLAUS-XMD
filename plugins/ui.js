@@ -7,6 +7,9 @@ const path = require('path');
    Used as the background of every card and as the fallback
    picture. They live in this file on purpose, so a dead link
    in your config can never break .alive or .repo again.       */
+// Show the reason in chat when an image can't be sent (set to false once everything works)
+const DEBUG_IMAGES = true;
+
 const IMAGES = {
   menu:  'https://files.catbox.moe/lusgnl.jpg',
   alive: 'https://files.catbox.moe/maj8xu.jpg',
@@ -28,12 +31,14 @@ const FONT_FILES = {
   KlausMed:  ['Poppins-Medium.ttf', 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Medium.ttf']
 };
 
-async function fetchTimeout(url, ms) {
+async function fetchTimeout(url, ms, opts = {}) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), ms);
-  try { return await fetch(url, { signal: ac.signal }); } finally { clearTimeout(timer); }
+  try { return await fetch(url, { ...opts, signal: ac.signal }); } finally { clearTimeout(timer); }
 }
 
+let fontError = null;
+let lastCardError = null;
 let fontsPromise = null;
 function ensureFonts() {
   if (!canvasLib) return Promise.resolve(false);
@@ -51,32 +56,53 @@ function ensureFonts() {
           canvasLib.GlobalFonts.registerFromPath(p, family);
         }
         return true;
-      } catch (_) { return false; }
+      } catch (e) { fontError = (e && e.message) || 'unknown'; return false; }
     })();
   }
   return fontsPromise;
 }
 
-const bgCache = new Map();
-const bgFailed = new Map();
-async function loadBg(src) {
-  if (!src || !canvasLib) return null;
-  if (bgCache.has(src)) return bgCache.get(src);
-  if (Date.now() - (bgFailed.get(src) || 0) < 120000) return null; // retry after 2 min
-  let img = null;
+/** Download an image ourselves (URL or local path) and keep it in memory. */
+const rawCache = new Map();
+const rawFailed = new Map();
+const rawErr = new Map();
+async function fetchBuffer(src) {
+  if (!src) return null;
+  if (rawCache.has(src)) return rawCache.get(src);
+  if (Date.now() - (rawFailed.get(src) || 0) < 120000) return null; // retry after 2 min
   try {
     let buf;
     if (/^https?:/i.test(src)) {
-      const r = await fetchTimeout(src, 6000);
-      if (!r.ok) throw new Error('bg');
+      const r = await fetchTimeout(src, 10000, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KlausBot/1.0)' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       buf = Buffer.from(await r.arrayBuffer());
     } else {
       buf = fs.readFileSync(src);
     }
-    img = await canvasLib.loadImage(buf);
-  } catch (_) { /* no background image, gradient only */ }
-  if (img) bgCache.set(src, img); else bgFailed.set(src, Date.now());
-  return img;
+    rawCache.set(src, buf);
+    return buf;
+  } catch (e) {
+    rawFailed.set(src, Date.now());
+    rawErr.set(src, (e && e.message) || 'unknown');
+    console.error('[main] image download failed:', src, '-', e && e.message);
+    return null;
+  }
+}
+
+const bgCache = new Map();
+async function loadBg(src) {
+  if (!src || !canvasLib) return null;
+  if (bgCache.has(src)) return bgCache.get(src);
+  try {
+    const buf = await fetchBuffer(src);
+    if (!buf) return null;
+    const img = await canvasLib.loadImage(buf);
+    bgCache.set(src, img);
+    return img;
+  } catch (e) {
+    console.error('[main] image decode failed:', src, '-', e && e.message);
+    return null;
+  }
 }
 
 const hexA = (hex, a) => {
@@ -114,9 +140,10 @@ function spaced(c, text, x, y, sp) {
  */
 async function renderCardInner(t, spec, bgSrc) {
   if (!canvasLib) return null;
+  lastCardError = null;
   try {
     const fontsOk = await ensureFonts();
-    if (!fontsOk && !canvasLib.GlobalFonts.families.length) return null;
+    if (!fontsOk && !canvasLib.GlobalFonts.families.length) { lastCardError = 'no fonts: ' + fontError; return null; }
     const P = t.palette;
     const B = fontsOk ? 'KlausBold' : 'sans-serif';
     const M = fontsOk ? 'KlausMed' : 'sans-serif';
@@ -234,7 +261,9 @@ async function renderCardInner(t, spec, bgSrc) {
     }
 
     return canvas.toBuffer('image/jpeg', 92);
-  } catch (_) {
+  } catch (e) {
+    lastCardError = (e && e.message) || 'unknown';
+    console.error('[main] card render failed:', lastCardError);
     return null;
   }
 }
@@ -244,8 +273,9 @@ const renderCard = (t, spec, bg) =>
   Promise.race([renderCardInner(t, spec, bg), new Promise(r => setTimeout(() => r(null), 10000))]);
 
 /* warm up fonts + background images at startup so the first command is fast */
+console.log(canvasLib ? '[main] image cards: canvas OK' : '[main] image cards: @napi-rs/canvas NOT installed (run: npm i @napi-rs/canvas), using plain pictures');
 ensureFonts();
-[IMAGES.menu, IMAGES.alive, IMAGES.repo].forEach(u => loadBg(u));
+[IMAGES.menu, IMAGES.alive, IMAGES.repo].forEach(u => fetchBuffer(u).then(() => loadBg(u)));
 
 /* ════════════════════════════════════════════════════════════
    1.  THEME ENGINE  (text UI, used for captions and fallbacks)
@@ -493,16 +523,30 @@ function nowParts(tz) {
 
 /** Send an image (URL string or Buffer) with caption, then an optional follow-up text. */
 async function sendImage(sock, from, img, caption, extra, contextInfo) {
+  // Download URL images ourselves so we don't depend on WhatsApp's downloader reaching the host
+  const payload = typeof img === 'string' ? ((await fetchBuffer(img)) || { url: img }) : img;
+  let failure = null;
+
   try {
-    await sock.sendMessage(from, {
-      image: Buffer.isBuffer(img) ? img : { url: img },
-      caption,
-      ...(contextInfo ? { contextInfo } : {})
-    });
-  } catch (e) {
-    // image failed (bad URL, network): still answer with text so the command never goes silent
-    console.error('[main] image send failed:', e && e.message);
-    await sock.sendMessage(from, { text: caption });
+    await sock.sendMessage(from, { image: payload, caption, ...(contextInfo ? { contextInfo } : {}) });
+  } catch (e1) {
+    failure = e1;
+    console.error('[main] image send failed (with link preview):', e1 && e1.message);
+    if (contextInfo) {
+      try {                                   // retry without the link preview card
+        await sock.sendMessage(from, { image: payload, caption });
+        failure = null;
+      } catch (e2) {
+        failure = e2;
+        console.error('[main] image send failed (plain):', e2 && e2.message);
+      }
+    }
+  }
+
+  if (failure) {
+    // last resort: answer with text so the command never goes silent
+    const note = DEBUG_IMAGES ? `\n\n_image error: ${clip((failure && failure.message) || 'unknown', 90)}_` : '';
+    await sock.sendMessage(from, { text: caption + note });
   }
   if (extra) await sock.sendMessage(from, { text: extra });
 }
@@ -634,6 +678,72 @@ const PLUGINS = [
     }
   },
 
+  /* ============ DIAG ============ */
+  {
+    command: 'diag',
+    aliases: ['imgtest'],
+    description: 'Self-test for images and cards',
+    category: 'main',
+    async run({ sock, from, sender, config, plugins, reply }) {
+      const t = getTheme(config, sender);
+      const L = [];
+      const ok  = (s) => L.push('OK   ' + s);
+      const bad = (s) => L.push('FAIL ' + s);
+
+      L.push(`node ${process.version}   fetch: ${typeof fetch}`);
+
+      // libraries
+      canvasLib ? ok('canvas installed') : bad('canvas missing -> npm i @napi-rs/canvas');
+      for (const lib of ['sharp', 'jimp']) {
+        try { require.resolve(lib); ok(`${lib} installed`); } catch (_) { L.push(`--   ${lib} not installed`); }
+      }
+      for (const n of ['@whiskeysockets/baileys', 'baileys', '@adiwajshing/baileys']) {
+        try { L.push(`--   ${n} ${require(n + '/package.json').version}`); break; } catch (_) { /* try next */ }
+      }
+
+      // who handles the commands?
+      for (const c of ['menu', 'alive', 'repo', 'ping']) {
+        const pl = plugins.get(c);
+        if (!pl) bad(`.${c} not registered`);
+        else if (pl.source === 'ui.js') ok(`.${c} handled by ui.js`);
+        else bad(`.${c} handled by ANOTHER file`);
+      }
+
+      // fonts
+      if (canvasLib) (await ensureFonts()) ? ok('fonts ready') : bad(`fonts: ${fontError || 'failed'}`);
+
+      // images
+      for (const [name, url] of Object.entries(IMAGES)) {
+        rawFailed.delete(url); rawCache.delete(url);
+        const buf = await fetchBuffer(url);
+        if (!buf) { bad(`image ${name}: ${rawErr.get(url) || 'download failed'}`); continue; }
+        const magic = buf[0] === 0xFF && buf[1] === 0xD8 ? 'jpeg' : buf[0] === 0x89 ? 'png' : buf.slice(0, 4).toString() === 'RIFF' ? 'webp' : buf.slice(0, 3).toString() === 'GIF' ? 'gif' : 'UNKNOWN';
+        (magic === 'UNKNOWN' ? bad : ok)(`image ${name}: ${(buf.length / 1024).toFixed(0)} KB ${magic}`);
+      }
+
+      // card render
+      const card = await renderCard(t, {
+        tag: 'Self test', title: config.botName, subtitle: 'Diagnostics',
+        chips: [['STATUS', 'OK']], footerL: 'diag', footerR: repoShort(config)
+      }, IMAGES.menu);
+      card ? ok(`card rendered ${(card.length / 1024).toFixed(0)} KB`) : bad(`card: ${lastCardError || 'canvas missing'}`);
+
+      // sending
+      const pic = card || (await fetchBuffer(IMAGES.menu));
+      if (!pic) bad('no picture to send (see image errors above)');
+      else {
+        try { await sock.sendMessage(from, { image: pic, caption: 'diag: plain image' }); ok('send plain image'); }
+        catch (e) { bad(`send plain: ${clip(e.message, 70)}`); }
+        try {
+          await sock.sendMessage(from, { image: pic, caption: 'diag: with link preview', contextInfo: linkCtx(config, config.botName, 'diag', IMAGES.menu) });
+          ok('send with link preview');
+        } catch (e) { bad(`send preview: ${clip(e.message, 70)}`); }
+      }
+
+      await reply(mono(L.join('\n')) + '\n_Send this result to your developer/assistant if something shows FAIL._');
+    }
+  },
+
   /* ============ ALIVE ============ */
   {
     command: 'alive',
@@ -762,7 +872,7 @@ const PLUGINS = [
   /* ============ REPO ============ */
   {
     command: 'repo',
-    aliases: ['github', 'source'],
+    aliases: ['source'],
     description: 'Show repository',
     category: 'main',
     async run({ sock, from, config, sender }) {
@@ -819,4 +929,4 @@ const guard = (run) => async (ctx) => {
   }
 };
 
-module.exports = PLUGINS.map(p => ({ ...p, run: guard(p.run) }));
+module.exports = PLUGINS.map(p => ({ ...p, source: 'ui.js', run: guard(p.run) }));
