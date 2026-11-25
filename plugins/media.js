@@ -15,18 +15,6 @@ module.exports = [
     }
   },
   {
-    command: 'tovid',
-    aliases: ['tovideo'],
-    description: 'Convert audio to video',
-    category: 'media',
-    async run({ sock, msg, from, reply }) {
-      const quoted = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
-      if (!quoted?.audioMessage) return reply('🎵 Reply to an audio message.');
-      reply('🎬 Converting... (needs ffmpeg on host)');
-      // Placeholder for ffmpeg conversion — implement with fluent-ffmpeg
-    }
-  },
-  {
     command: 'togif',
     description: 'Convert video to GIF',
     category: 'media',

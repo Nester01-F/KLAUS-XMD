@@ -80,24 +80,4 @@ module.exports = [
       } catch { reply('❌ User not found.'); }
     }
   },
-  {
-    command: 'npm',
-    aliases: ['package'],
-    description: 'Look up npm package',
-    category: 'tools',
-    async run({ reply, text }) {
-      if (!text) return reply('📦 Example: .npm express');
-      try {
-        const { data } = await axios.get(`https://registry.npmjs.org/${text}`);
-        reply(
-`📦 *${data.name}*
-━━━━━━━━━━━━━━━
-📝 ${data.description || 'no description'}
-🔢 Version: *${data['dist-tags'].latest}*
-📜 License: *${data.license || 'N/A'}*
-🔗 https://npmjs.com/package/${data.name}`
-        );
-      } catch { reply('❌ Package not found.'); }
-    }
-  }
 ];

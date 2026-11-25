@@ -16,18 +16,6 @@ module.exports = [
     }
   },
   {
-    command: 'wiki',
-    description: 'Wikipedia summary',
-    category: 'tools',
-    async run({ reply, text }) {
-      if (!text) return reply('📚 Example: .wiki Albert Einstein');
-      try {
-        const { data } = await axios.get(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(text)}`);
-        reply(`📚 *${data.title}*\n\n${data.extract}\n\n🔗 ${data.content_urls?.desktop?.page || ''}`);
-      } catch { reply('❌ Not found.'); }
-    }
-  },
-  {
     command: 'currency',
     description: 'Convert currency',
     category: 'tools',
