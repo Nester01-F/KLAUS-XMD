@@ -65,3 +65,6 @@ data/fonts/
 data/themes.json
 data/fonts/
 data/themes.json
+*.original
+*.original.bak
+*.obf.js
