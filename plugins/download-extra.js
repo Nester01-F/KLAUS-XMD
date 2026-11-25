@@ -1,15 +1,21 @@
 const axios = require('axios');
 const yts = require('yt-search');
- 
+
+const API = 'https://apix.wolvarex.com';
+const KEY = process.env.WOLVAREX_KEY || 'wxa_f_2fca8d14eb';
+const api = (path) => `${API}${path}${path.includes('?') ? '&' : '?'}key=${KEY}`;
+
 module.exports = [
+  /* ============ 🎬 YTMP4 ============ */
   {
     command: 'ytmp4',
-    description: 'YouTube video downloader',
+    aliases: ['ytvideo'],
+    description: 'Download YouTube video (MP4)',
     category: 'download',
     async run({ reply, text, sock, from, msg }) {
-      if (!text) return reply('🎬 Example: .ytmp4 https://youtu.be/...');
-      const id = text.match(/(?:youtu\.be\/|v=)([\w-]{11})/)?.[1];
-      if (!id) return reply('❌ Invalid YouTube URL.');
+      if (!text) return reply('🎬 Example: .ytmp4 https://youtu.be/dQw4w9WgXcQ');
+      const id = text.match(/(?:youtu\.be\/|v=)([\w-]{11})/)?.[1] || text.trim();
+      if (!/^[\w-]{11}$/.test(id)) return reply('❌ Invalid YouTube ID/URL.');
 
       let info;
       try { info = await yts({ videoId: id }); }
@@ -20,175 +26,77 @@ module.exports = [
         caption: `🎬 *${info.title}*\n⏱️ ${info.timestamp}\n\n_Processing..._`
       }, { quoted: msg });
 
-      // Try multiple APIs
-      const apis = [
-        `https://api.vevioz.com/api/button/mp4/${id}`,
-        `https://co.wuk.sh/api/json`,
-      ];
-
       try {
-        // Use Cobalt API (free, no key)
-        const { data } = await axios.post('https://co.wuk.sh/api/json', {
-          url: `https://youtube.com/watch?v=${id}`,
-          vQuality: '720',
-          isAudioOnly: false
-        }, {
-          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-          timeout: 30000
-        });
+        const { data } = await axios.get(
+          api(`/api/music/ytmp4-download?id=${id}&quality=480&provider=ytmp4`),
+          { timeout: 60000 }
+        );
 
-        const videoUrl = data.url || data.status?.url;
-        if (!videoUrl) throw new Error('No download URL');
+        const videoUrl = data?.result?.download_url || data?.result?.url || data?.downloadURL || data?.url;
+        if (!videoUrl) throw new Error(data?.error || data?.message || 'No download URL');
 
         await sock.sendMessage(from, {
           video: { url: videoUrl },
-          caption: `✅ *${info.title}*`
+          caption: `✅ *${info.title}*\n\n> KLAUS XMD`,
+          mimetype: 'video/mp4'
         }, { quoted: msg });
-      } catch (e) {
-        reply(`❌ Download failed: ${e.message}\n\n_Try again later_`);
-      }
-    }
-  },
-  {
-    command: 'ig',
-    aliases: ['instagram'],
-    description: 'Instagram downloader',
-    category: 'download',
-    async run({ reply, text, sock, from, msg }) {
-      if (!text.includes('instagram.com')) return reply('📸 Send an Instagram link.');
-
-      try {
-        // Use Instagram direct API — works for public posts
-        const { data } = await axios.get(
-          `https://www.instagram.com/p/${text.match(/\/p\/([^/]+)/)?.[1] || ''}/?__a=1&__d=dis`,
-          {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            timeout: 15000
-          }
-        ).catch(() => ({}));
-
-        // Fallback: use instasupersave or similar
-        const apiUrl = `https://api.instasupersave.com/api/convert`;
-        const { data: result } = await axios.post(apiUrl, {
-          url: text
-        }, {
-          headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0',
-            'Accept': 'application/json'
-          },
-          timeout: 30000
-        });
-
-        const media = result?.url || result?.media || result?.data;
-        if (!media) return reply('❌ Could not fetch media. Instagram may require login for this post.');
-
-        const mediaList = Array.isArray(media) ? media : [media];
-        for (const item of mediaList.slice(0, 5)) {
-          const url = typeof item === 'string' ? item : (item.url || item.src);
-          if (!url) continue;
-          const isVideo = url.includes('.mp4') || url.includes('video');
-          await sock.sendMessage(from, isVideo
-            ? { video: { url }, caption: '📸 KLAUS XMD' }
-            : { image: { url }, caption: '📸 KLAUS XMD' }, { quoted: msg });
-        }
-      } catch (e) {
-        reply(`❌ Download failed: ${e.message}\n\n_Instagram may block this link_`);
-      }
-    }
-  },
-  {
-    command: 'fb',
-    aliases: ['facebook'],
-    description: 'Facebook downloader',
-    category: 'download',
-    async run({ reply, text, sock, from, msg }) {
-      if (!text.includes('facebook.com')) return reply('📘 Send a Facebook link.');
-
-      try {
-        // Use Snapsave or similar public API
-        const { data } = await axios.post(
-          'https://snapsave.app/action.php',
-          new URLSearchParams({ url: text }),
-          {
-            headers: {
-              'Content-Type': 'application/x-www-form-urlencoded',
-              'User-Agent': 'Mozilla/5.0',
-              'Referer': 'https://snapsave.app/'
-            },
-            timeout: 30000
-          }
-        );
-
-        // Parse the HTML response for video URL
-        const videoMatch = data.match(/href="(https:\/\/[^"]*?\.mp4[^"]*)"/);
-        if (!videoMatch) throw new Error('No video URL found');
-
-        await sock.sendMessage(from, {
-          video: { url: videoMatch[1] },
-          caption: '📘 KLAUS XMD'
-        }, { quoted: msg });
-      } catch (e) {
-        reply(`❌ Download failed: ${e.message}\n\n_Try a different FB link_`);
-      }
-    }
-  },
-  {
-    command: 'spotify',
-    description: 'Spotify track download',
-    category: 'download',
-    async run({ reply, text, sock, from, msg }) {
-      if (!text.includes('spotify.com')) return reply('🎵 Send a Spotify link.');
-
-      try {
-        // Use spotdl API
-        const trackId = text.match(/track\/([a-zA-Z0-9]+)/)?.[1];
-        if (!trackId) return reply('❌ Invalid Spotify link.');
-
-        // Get metadata from Spotify's public API
-        const { data: meta } = await axios.get(
-          `https://api.spotifydown.com/metadata/track/${trackId}`,
-          {
-            headers: {
-              'Origin': 'https://spotifydown.com',
-              'Referer': 'https://spotifydown.com/',
-              'User-Agent': 'Mozilla/5.0'
-            },
-            timeout: 15000
-          }
-        );
-
-        if (!meta.success) throw new Error('Track not found');
-
-        await sock.sendMessage(from, {
-          image: { url: meta.metadata.cover },
-          caption: `🎵 *${meta.metadata.title}*\n👤 ${meta.metadata.artists}`
-        }, { quoted: msg });
-
-        // Get download link
-        const { data: dl } = await axios.get(
-          `https://api.spotifydown.com/download/${trackId}`,
-          {
-            headers: {
-              'Origin': 'https://spotifydown.com',
-              'Referer': 'https://spotifydown.com/',
-              'User-Agent': 'Mozilla/5.0'
-            },
-            timeout: 30000
-          }
-        );
-
-        if (dl.success && dl.link) {
-          await sock.sendMessage(from, {
-            audio: { url: dl.link },
-            mimetype: 'audio/mp4',
-            fileName: `${meta.metadata.title}.mp3`
-          }, { quoted: msg });
-        } else {
-          reply('❌ Audio download failed. Track may be unavailable.');
-        }
       } catch (e) {
         reply(`❌ Download failed: ${e.message}`);
+      }
+    }
+  },
+
+  /* ============ 🎵 PLAY / YTMP3 ============ */
+  {
+    command: 'play',
+    aliases: ['ytmp3', 'song', 'audio'],
+    description: 'Search & download YouTube audio',
+    category: 'download',
+    async run({ reply, text, sock, from, msg }) {
+      if (!text) return reply('🎵 Example: .play faded alan walker');
+
+      await reply('🔍 *Searching...*');
+      try {
+        // 1. Search
+        const { data: search } = await axios.get(
+          api(`/api/music/ytmp3-net-search?q=${encodeURIComponent(text)}&provider=ytmp3`),
+          { timeout: 30000 }
+        );
+
+        const results = search?.result || search?.results || search?.data;
+        const first = Array.isArray(results) ? results[0] : results;
+        if (!first) throw new Error('No results');
+
+        const videoId = first.videoId || first.id || first.video_id;
+        const title = first.title || first.name || text;
+        const thumb = first.thumbnail || first.thumb || first.image || first.cover;
+
+        if (!videoId) throw new Error('No video ID in result');
+
+        await reply(`🎵 *${title}*\n_Downloading audio..._`);
+
+        // 2. Download
+        const { data: dl } = await axios.get(
+          api(`/api/music/ytmp4-download?id=${videoId}&quality=audio&provider=ytmp4`),
+          { timeout: 60000 }
+        );
+
+        const audioUrl = dl?.result?.download_url || dl?.result?.url || dl?.downloadURL || dl?.url;
+        if (!audioUrl) throw new Error(dl?.error || 'No audio URL');
+
+        if (thumb) {
+          await sock.sendMessage(from, {
+            image: { url: thumb },
+            caption: `🎵 *${title}*`
+          }, { quoted: msg });
+        }
+        await sock.sendMessage(from, {
+          audio: { url: audioUrl },
+          mimetype: 'audio/mp4',
+          fileName: `${title}.mp3`
+        }, { quoted: msg });
+      } catch (e) {
+        reply(`❌ Failed: ${e.message}`);
       }
     }
   }
