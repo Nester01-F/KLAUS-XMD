@@ -4,10 +4,9 @@ const fs = require('fs');
 const path = require('path');
 
 const DEBUG_IMAGES = true;
+const GROUP_LINK = 'https://chat.whatsapp.com/GMXcHGCsLEeKPTyHLr4SaG';
 
-/* ── MULTI-FALLBACK IMAGES ────────────────────────────────────
-   Each key has an array of URLs tried in order.
-   If all fail, a plain caption is sent (no image) — never silent. */
+/* ── MULTI-FALLBACK IMAGES ──────────────────────────────────── */
 const IMAGES = {
   menu: [
     'https://files.catbox.moe/lusgnl.jpg',
@@ -26,7 +25,7 @@ const IMAGES = {
   ]
 };
 
-/* ── TEXT BANNERS (no canvas needed) ────────────────────────── */
+/* ── TEXT BANNERS ───────────────────────────────────────────── */
 const BANNERS = {
   neon: (config) => `
 ╔══════════════════════════════════════╗
@@ -76,7 +75,7 @@ function waContact(config) {
   return `https://wa.me/${num}`;
 }
 
-/* ── IMAGE FETCH WITH FALLBACK CHAIN ────────────────────────── */
+/* ── IMAGE FETCH ────────────────────────────────────────────── */
 async function fetchFirstWorking(urls, timeout = 8000) {
   for (const url of urls) {
     try {
@@ -98,7 +97,7 @@ async function fetchFirstWorking(urls, timeout = 8000) {
   return null;
 }
 
-/* ── SEND IMAGE OR TEXT FALLBACK ────────────────────────────── */
+/* ── SEND CARD ──────────────────────────────────────────────── */
 async function sendCard(sock, from, imgKey, caption, contextInfo) {
   const urls = IMAGES[imgKey] || [];
   const buf = await fetchFirstWorking(urls);
@@ -122,11 +121,22 @@ async function sendCard(sock, from, imgKey, caption, contextInfo) {
     }
   }
 
-  // All images failed — send text only (never silent)
   await sock.sendMessage(from, {
     text: caption + (DEBUG_IMAGES ? '\n\n_⚠️ Image unavailable_•' : '')
   });
   return false;
+}
+
+/* ── GROUP FOOTER BLOCK (reusable) ──────────────────────────── */
+function groupFooter() {
+  return `
+╔══════════════════════════════════════╗
+║      📢 *JOIN OUR GROUP*             ║
+╠══════════════════════════════════════╣
+║  🔗 ${GROUP_LINK}
+╚══════════════════════════════════════╝
+
+_Tap the card above to join_`;
 }
 
 /* ── PLUGINS ────────────────────────────────────────────────── */
@@ -164,12 +174,13 @@ module.exports = [
           t += `▸ *${config.prefix}${c}*\n`;
           if (desc) t += `   ↳ _${desc}_\n`;
         }
+        t += groupFooter();
         return sendCard(sock, from, 'menu', t, {
           externalAdReply: {
             title: `${config.botName} — ${label}`,
-            body: `${list.length} commands`,
+            body: `📢 Join our group`,
             thumbnailUrl: (IMAGES.alive[0]),
-            sourceUrl: waContact(config),
+            sourceUrl: GROUP_LINK,
             mediaType: 1
           }
         });
@@ -211,14 +222,16 @@ module.exports = [
         txt += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
       }
 
-      txt += `_⚡ ${config.botName} · © 2026 ${config.ownerName || 'Warrior Felix'}_`;
+      // ═══ GROUP LINK FOOTER ═══
+      txt += groupFooter();
+      txt += `\n\n_⚡ ${config.botName} · © 2026 ${config.ownerName || 'Warrior Felix'}_`;
 
       await sendCard(sock, from, 'menu', txt, {
         externalAdReply: {
-          title: `${config.botName} — Menu`,
-          body: `${plugins.size} commands · Tap to chat`,
+          title: `${config.botName} — Command Menu`,
+          body: `📢 Join our group · ${plugins.size} commands`,
           thumbnailUrl: (IMAGES.alive[0]),
-          sourceUrl: waContact(config),
+          sourceUrl: GROUP_LINK,
           mediaType: 1
         }
       });
@@ -267,9 +280,9 @@ module.exports = [
       await sendCard(sock, from, 'alive', caption, {
         externalAdReply: {
           title: `${config.botName} — Online`,
-          body: `Uptime ${uptime} · Tap to chat`,
+          body: `Uptime ${uptime} · Tap to join group`,
           thumbnailUrl: (IMAGES.alive[0]),
-          sourceUrl: waContact(config),
+          sourceUrl: GROUP_LINK,
           mediaType: 1
         }
       });
@@ -338,9 +351,9 @@ module.exports = [
       await sendCard(sock, from, 'alive', caption, {
         externalAdReply: {
           title: `${config.botName} — Uptime`,
-          body: `${d}d ${h}h ${m}m · Tap to chat`,
+          body: `${d}d ${h}h ${m}m · Tap to join group`,
           thumbnailUrl: (IMAGES.alive[0]),
-          sourceUrl: waContact(config),
+          sourceUrl: GROUP_LINK,
           mediaType: 1
         }
       });
