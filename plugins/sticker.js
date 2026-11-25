@@ -3,7 +3,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 
 const API = 'https://apix.wolvarex.com';
-const KEY = process.env.WOLVAREX_KEY || 'wxa_f_29f9cb9803';
+const KEY = process.env.WOLVAREX_KEY || 'wxa_f_2fca8d14eb';
 
 async function convert(buf, endpoint, contentType) {
   const form = new FormData();
