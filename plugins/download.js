@@ -4,9 +4,25 @@ const axios = require('axios');
 const API = 'https://prexzyapis.com';
 const api = (path) => `${API}${path}`;
 
+/* ── Helper: download URL to buffer with proper headers ─────── */
+async function downloadBuffer(url, timeout = 60000) {
+  const res = await axios.get(url, {
+    responseType: 'arraybuffer',
+    timeout,
+    maxContentLength: 100 * 1024 * 1024, // 100MB max
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Range': 'bytes=0-'
+    }
+  });
+  return Buffer.from(res.data);
+}
+
 module.exports = [
   /* ═══════════════════════════════════════════════════════════
-     🎬 YTMP4
+     🎬 YTMP4 — download video to buffer
      ═══════════════════════════════════════════════════════════ */
   {
     command: 'ytmp4',
@@ -24,7 +40,7 @@ module.exports = [
 
       await sock.sendMessage(from, {
         image: { url: info.thumbnail },
-        caption: `🎬 *${info.title}*\n⏱️ ${info.timestamp}\n\n_Processing..._`
+        caption: `🎬 *${info.title}*\n⏱️ ${info.timestamp}\n\n_Downloading video..._`
       }, { quoted: msg });
 
       try {
@@ -33,11 +49,16 @@ module.exports = [
           api(`/download/ytmp4?url=${encodeURIComponent(url)}`),
           { timeout: 60000 }
         );
-        const videoUrl = data?.download_url || data?.url || data?.result?.url || data?.result?.download_url || data?.data?.url;
-        if (!videoUrl) throw new Error(data?.error || data?.message || 'No video URL');
+        const videoUrl = data?.download_url || data?.url || data?.result?.url || data?.data?.url;
+        if (!videoUrl) throw new Error(data?.error || 'No video URL');
+
+        // ⚡ Download to buffer first — avoids "Failed to fetch stream"
+        const buf = await downloadBuffer(videoUrl, 120000);
+
+        if (buf.length < 10000) throw new Error('Video too small — download failed');
 
         await sock.sendMessage(from, {
-          video: { url: videoUrl },
+          video: buf,
           caption: `✅ *${info.title}*\n\n> KLAUS XMD`,
           mimetype: 'video/mp4'
         }, { quoted: msg });
@@ -48,7 +69,7 @@ module.exports = [
   },
 
   /* ═══════════════════════════════════════════════════════════
-     🎵 PLAY / YTMP3
+     🎵 PLAY / YTMP3 — download audio to buffer
      ═══════════════════════════════════════════════════════════ */
   {
     command: 'play',
@@ -67,7 +88,7 @@ module.exports = [
 
       await sock.sendMessage(from, {
         image: { url: info.thumbnail },
-        caption: `🎧 *${info.title}*\n⏱️ ${info.timestamp}\n👤 ${info.author.name}\n\n_Generating audio..._`
+        caption: `🎧 *${info.title}*\n⏱️ ${info.timestamp}\n👤 ${info.author.name}\n\n_Downloading audio..._`
       }, { quoted: msg });
 
       try {
@@ -75,11 +96,16 @@ module.exports = [
           api(`/download/ytmp3?url=${encodeURIComponent(info.url)}`),
           { timeout: 60000 }
         );
-        const audioUrl = data?.download_url || data?.url || data?.result?.url || data?.result?.download_url || data?.data?.url;
+        const audioUrl = data?.download_url || data?.url || data?.result?.url || data?.data?.url;
         if (!audioUrl) throw new Error(data?.error || 'No audio URL');
 
+        // ⚡ Download to buffer first
+        const buf = await downloadBuffer(audioUrl, 120000);
+
+        if (buf.length < 5000) throw new Error('Audio too small — download failed');
+
         await sock.sendMessage(from, {
-          audio: { url: audioUrl },
+          audio: buf,
           mimetype: 'audio/mp4',
           fileName: `${info.title}.mp3`
         }, { quoted: msg });
@@ -90,7 +116,7 @@ module.exports = [
   },
 
   /* ═══════════════════════════════════════════════════════════
-     🎵 TIKTOK
+     🎵 TIKTOK — download video to buffer
      ═══════════════════════════════════════════════════════════ */
   {
     command: 'tiktok',
@@ -116,9 +142,14 @@ module.exports = [
         if (cover) {
           await sock.sendMessage(from, { image: { url: cover }, caption: `🎵 *${title}*` }, { quoted: msg });
         }
+
+        // ⚡ Download to buffer
+        const buf = await downloadBuffer(video);
+
         await sock.sendMessage(from, {
-          video: { url: video },
-          caption: `🎵 ${title}\n\n> KLAUS XMD`
+          video: buf,
+          caption: `🎵 ${title}\n\n> KLAUS XMD`,
+          mimetype: 'video/mp4'
         }, { quoted: msg });
       } catch (e) {
         reply(`❌ Failed: ${e.message}`);
@@ -127,7 +158,7 @@ module.exports = [
   },
 
   /* ═══════════════════════════════════════════════════════════
-     📘 FACEBOOK
+     📘 FACEBOOK — download video to buffer
      ═══════════════════════════════════════════════════════════ */
   {
     command: 'fb',
@@ -147,9 +178,13 @@ module.exports = [
         const video = data?.hd || data?.sd || data?.url || data?.video || data?.result?.hd || data?.result?.sd;
         if (!video) throw new Error(data?.error || 'No video URL');
 
+        // ⚡ Download to buffer
+        const buf = await downloadBuffer(video);
+
         await sock.sendMessage(from, {
-          video: { url: video },
-          caption: `📘 KLAUS XMD`
+          video: buf,
+          caption: `📘 KLAUS XMD`,
+          mimetype: 'video/mp4'
         }, { quoted: msg });
       } catch (e) {
         reply(`❌ Failed: ${e.message}`);
@@ -158,7 +193,7 @@ module.exports = [
   },
 
   /* ═══════════════════════════════════════════════════════════
-     🎧 SPOTIFY
+     🎧 SPOTIFY — download audio to buffer
      ═══════════════════════════════════════════════════════════ */
   {
     command: 'spotify',
@@ -185,11 +220,15 @@ module.exports = [
         if (thumb) {
           await sock.sendMessage(from, {
             image: { url: thumb },
-            caption: `🎧 *${title}*\n👤 ${artist}`
+            caption: `🎧 *${title}*\n👤 ${artist}\n\n_Downloading audio..._`
           }, { quoted: msg });
         }
+
+        // ⚡ Download to buffer
+        const buf = await downloadBuffer(audioUrl);
+
         await sock.sendMessage(from, {
-          audio: { url: audioUrl },
+          audio: buf,
           mimetype: 'audio/mp4',
           fileName: `${title}.mp3`
         }, { quoted: msg });
