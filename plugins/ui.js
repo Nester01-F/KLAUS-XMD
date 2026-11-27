@@ -1,49 +1,68 @@
 const { getDB, getLeaderboard } = require('../lib/database');
 const os = require('os');
-const fs = require('fs');
-const path = require('path');
 
 const DEBUG_IMAGES = true;
 const GROUP_LINK = 'https://chat.whatsapp.com/GMXcHGCsLEeKPTyHLr4SaG';
 
-/* ── MULTI-FALLBACK IMAGES ──────────────────────────────────── */
 const IMAGES = {
   menu: [
     'https://files.catbox.moe/lusgnl.jpg',
-    'https://raw.githubusercontent.com/Nester01-F/KLAUS-XMD/main/assets/menu.jpg',
-    'https://i.imgur.com/8YVvX0A.jpeg'
+    'https://raw.githubusercontent.com/Nester01-F/KLAUS-XMD/main/assets/menu.jpg'
   ],
   alive: [
     'https://files.catbox.moe/maj8xu.jpg',
-    'https://raw.githubusercontent.com/Nester01-F/KLAUS-XMD/main/assets/alive.jpg',
-    'https://i.imgur.com/8YVvX0A.jpeg'
+    'https://raw.githubusercontent.com/Nester01-F/KLAUS-XMD/main/assets/alive.jpg'
   ],
   repo: [
     'https://files.catbox.moe/maj8xu.jpg',
-    'https://raw.githubusercontent.com/Nester01-F/KLAUS-XMD/main/assets/repo.jpg',
-    'https://i.imgur.com/8YVvX0A.jpeg'
+    'https://raw.githubusercontent.com/Nester01-F/KLAUS-XMD/main/assets/repo.jpg'
   ]
 };
 
-/* ── TEXT BANNERS ───────────────────────────────────────────── */
-const BANNERS = {
-  neon: (config) => `
-╔══════════════════════════════════════╗
-║   ⚡ *${config.botName}* ⚡          ║
-║      _WhatsApp Bot v1.0_             ║
-╚══════════════════════════════════════╝`,
-  royal: (config) => `
-╔══════════════════════════════════════╗
-║      👑 *${config.botName}* 👑       ║
-║      _Premium WhatsApp Bot_          ║
-╚══════════════════════════════════════╝`,
-  hacker: (config) => `
-┌─[${config.botName}]─[~]
-└─$ ./start --status
-`
+/* ═══════════════════════════════════════════════════════════════
+   🎨 STYLE SYSTEM
+   ═══════════════════════════════════════════════════════════════ */
+
+const BANNER = `
+╔══════════════════════════════════════════╗
+║  ██╗  ██╗██╗      █████╗ ██╗   ██╗███████╗
+║  ██║ ██╔╝██║     ██╔══██╗██║   ██║██╔════╝
+║  █████╔╝ ██║     ███████║██║   ██║███████╗
+║  ██╔═██╗ ██║     ██╔══██║██║   ██║╚════██║
+║  ██║  ██╗███████╗██║  ██║╚██████╔╝███████║
+║  ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝
+║                                            ║
+║      ⚡ POWERED BY KLAUS TECH 🇰🇪          ║
+╚══════════════════════════════════════════╝`;
+
+const CAT_STYLE = {
+  main:        { icon: '🏠', dot: '⚪', tag: 'CORE' },
+  download:    { icon: '📥', dot: '🔵', tag: 'MEDIA' },
+  ai:          { icon: '🤖', dot: '🟢', tag: 'SMART' },
+  sticker:     { icon: '🖼️', dot: '🟣', tag: 'VISUAL' },
+  stickers:    { icon: '🎨', dot: '🟪', tag: 'PACKS' },
+  games:       { icon: '🎮', dot: '🟠', tag: 'PLAY' },
+  fun:         { icon: '🎉', dot: '🔴', tag: 'JOY' },
+  text:        { icon: '✍️', dot: '🟣', tag: 'EDITOR' },
+  tools:       { icon: '🛠️', dot: '🟡', tag: 'TOOLS' },
+  search:      { icon: '🔍', dot: '🟡', tag: 'FIND' },
+  media:       { icon: '🎬', dot: '🟪', tag: 'MEDIA' },
+  utility:     { icon: '💬', dot: '🔷', tag: 'UTIL' },
+  info:        { icon: 'ℹ️', dot: '🔵', tag: 'INFO' },
+  status:      { icon: '👁️', dot: '🔴', tag: 'STATUS' },
+  leaderboard: { icon: '🏆', dot: '🟠', tag: 'RANKS' },
+  group:       { icon: '👥', dot: '🔷', tag: 'GROUP' },
+  admin:       { icon: '🛡️', dot: '🔶', tag: 'ADMIN' },
+  settings:    { icon: '⚙️', dot: '⚪', tag: 'CONFIG' },
+  automation:  { icon: '🔄', dot: '🟢', tag: 'AUTO' },
+  owner:       { icon: '👑', dot: '🟡', tag: 'ROOT' },
+  other:       { icon: '📦', dot: '⚪', tag: 'MISC' }
 };
 
-/* ── HELPERS ────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   🛠 HELPERS
+   ═══════════════════════════════════════════════════════════════ */
+
 function fmtUptime(ms) {
   const s = Math.floor(ms / 1000);
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
@@ -75,7 +94,27 @@ function waContact(config) {
   return `https://wa.me/${num}`;
 }
 
-/* ── IMAGE FETCH ────────────────────────────────────────────── */
+function inlineCmds(prefix, cmds, perLine = 3) {
+  const lines = [];
+  for (let i = 0; i < cmds.length; i += perLine) {
+    const chunk = cmds.slice(i, i + perLine);
+    lines.push('  ' + chunk.map(c => `\`${prefix}${c}\``).join('  '));
+  }
+  return lines.join('\n');
+}
+
+function catBlock(prefix, cat, cmds) {
+  const style = CAT_STYLE[cat] || { icon: '📦', dot: '⚪', tag: 'MISC' };
+  const header = `┏━━${style.dot}「 ${style.icon} *${cat.toUpperCase()}* 」`;
+  const tagLine = `┃   ${style.tag} · ${cmds.length} commands`;
+  const cmdsLine = inlineCmds(prefix, cmds, 3);
+  return `${header}\n${tagLine}\n┃\n${cmdsLine.split('\n').map(l => '┃' + l).join('\n')}\n┗━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   🖼 IMAGE FETCH
+   ═══════════════════════════════════════════════════════════════ */
+
 async function fetchFirstWorking(urls, timeout = 8000) {
   for (const url of urls) {
     try {
@@ -97,7 +136,6 @@ async function fetchFirstWorking(urls, timeout = 8000) {
   return null;
 }
 
-/* ── SEND CARD ──────────────────────────────────────────────── */
 async function sendCard(sock, from, imgKey, caption, contextInfo) {
   const urls = IMAGES[imgKey] || [];
   const buf = await fetchFirstWorking(urls);
@@ -111,43 +149,45 @@ async function sendCard(sock, from, imgKey, caption, contextInfo) {
       });
       return true;
     } catch (e) {
-      if (DEBUG_IMAGES) console.warn(`[ui] send with context failed: ${e.message}`);
       try {
         await sock.sendMessage(from, { image: buf, caption });
         return true;
-      } catch (e2) {
-        if (DEBUG_IMAGES) console.warn(`[ui] send plain failed: ${e2.message}`);
-      }
+      } catch (e2) {}
     }
   }
 
-  await sock.sendMessage(from, {
-    text: caption + (DEBUG_IMAGES ? '\n\n_⚠️ Image unavailable_•' : '')
-  });
+  await sock.sendMessage(from, { text: caption });
   return false;
 }
 
-/* ── GROUP FOOTER BLOCK (reusable) ──────────────────────────── */
 function groupFooter() {
   return `
-╔══════════════════════════════════════╗
-║      📢 *JOIN OUR GROUP*             ║
-╠══════════════════════════════════════╣
-║  🔗 ${GROUP_LINK}
-╚══════════════════════════════════════╝
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃   📢 *JOIN OUR COMMUNITY*   ┃
+┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃   🔗 ${GROUP_LINK}
+┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
-_Tap the card above to join_`;
+_👆 Tap the card above to join_`;
 }
 
-/* ── PLUGINS ────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   📋 PLUGINS
+   ═══════════════════════════════════════════════════════════════ */
+
+let senderGlobal = '';
+
 module.exports = [
-  /* ============ MENU ============ */
+  /* ═══════════════════════════════════════════════════════════
+     📋 MENU
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'menu',
     aliases: ['help', 'cmds', 'commands'],
     description: 'Show all commands',
     category: 'main',
     async run({ sock, from, sender, text, reply, config, plugins }) {
+      senderGlobal = sender;
       const cats = {};
       for (const [name, p] of plugins) {
         if (name === 'menu') continue;
@@ -155,30 +195,38 @@ module.exports = [
         (cats[c] = cats[c] || []).push(name);
       }
 
-      const db = getDB();
-      const lb = getLeaderboard();
-      const myCmds = lb.commands[sender] || 0;
-      const uptime = fmtUptime(Date.now() - db.stats.startedAt);
-
-      // Drill-down
+      /* ═══ DRILL-DOWN ═══ */
       if (text) {
         const cat = text.trim().toLowerCase();
         const list = (cats[cat] || []).sort();
         if (!list.length) {
-          return reply(`❌ Unknown category: *${cat}*\n\nAvailable: ${Object.keys(cats).join(', ')}`);
+          return reply(
+`❌ *Unknown category:* \`${cat}\`
+
+📂 *Available:*
+${Object.keys(cats).map(c => `• ${c}`).join('\n')}`
+          );
         }
-        const label = cat.toUpperCase();
-        let t = `╔══════════════════════════════════════╗\n║  📋 *${label}* (${list.length})\n╚══════════════════════════════════════╝\n\n`;
+        const style = CAT_STYLE[cat] || { icon: '📦', dot: '⚪', tag: 'MISC' };
+
+        let t = `╔══════════════════════════════════════╗\n`;
+        t += `║  ${style.dot} ${style.icon} *${cat.toUpperCase()}*  ║\n`;
+        t += `║  ${style.tag} · ${list.length} commands\n`;
+        t += `╚══════════════════════════════════════╝\n\n`;
+
         for (const c of list) {
           const desc = plugins.get(c)?.description || '';
-          t += `▸ *${config.prefix}${c}*\n`;
+          t += `▸ \`${config.prefix}${c}\`\n`;
           if (desc) t += `   ↳ _${desc}_\n`;
         }
-        t += groupFooter();
+
+        t += `\n${groupFooter()}`;
+        t += `\n\n_⚡ ${config.botName} · © 2026 ${config.ownerName || 'Warrior Felix'}_`;
+
         return sendCard(sock, from, 'menu', t, {
           externalAdReply: {
-            title: `${config.botName} — ${label}`,
-            body: `📢 Join our group`,
+            title: `${config.botName} — ${cat.toUpperCase()}`,
+            body: `${list.length} commands · Tap to join group`,
             thumbnailUrl: (IMAGES.alive[0]),
             sourceUrl: GROUP_LINK,
             mediaType: 1
@@ -186,50 +234,58 @@ module.exports = [
         });
       }
 
-      // Full menu
-      let txt = `╔══════════════════════════════════════╗\n`;
-      txt += `║   ⚡ *${config.botName}* ⚡          ║\n`;
-      txt += `║      _Command Menu v1.0_             ║\n`;
-      txt += `╚══════════════════════════════════════╝\n\n`;
+      /* ═══ FULL MENU ═══ */
+      const db = getDB();
+      const lb = getLeaderboard();
+      const myCmds = lb.commands[sender] || 0;
+      const uptime = fmtUptime(Date.now() - db.stats.startedAt);
 
-      txt += `┏━━━━━「 📊 SYSTEM 」━━━━━┓\n`;
-      txt += `┃ ⚙️ Prefix   : \`${config.prefix}\`\n`;
-      txt += `┃ 📦 Commands : *${plugins.size}*\n`;
-      txt += `┃ ⏱️ Uptime   : *${uptime}*\n`;
-      txt += `┃ 💾 Memory   : *${memMB()} MB*\n`;
-      txt += `┃ 🖥️ Platform : *${os.platform()} ${os.arch()}*\n`;
-      txt += `┃ 🟢 Node     : *${process.version}*\n`;
+      let txt = BANNER + '\n\n';
+
+      /* ── SYSTEM PANEL ── */
+      txt += `┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n`;
+      txt += `┃  ⚙️ *SYSTEM STATUS*          ┃\n`;
+      txt += `┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫\n`;
+      txt += `┃  ▸ Prefix   : \`${config.prefix}\`\n`;
+      txt += `┃  ▸ Commands : *${plugins.size}*\n`;
+      txt += `┃  ▸ Uptime   : *${uptime}*\n`;
+      txt += `┃  ▸ Memory   : *${memMB()} MB*\n`;
+      txt += `┃  ▸ Platform : *${os.platform()} ${os.arch()}*\n`;
+      txt += `┃  ▸ Node     : *${process.version}*\n`;
       txt += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
 
-      txt += `┏━━━━━「 👤 PROFILE 」━━━━━┓\n`;
-      txt += `┃ 🎖️ Rank : *${userRank(myCmds)}*\n`;
-      txt += `┃ 📈 Used : *${myCmds}* commands\n`;
-      txt += `┃ 📊 Lvl  : ${bar(Math.min(100, myCmds / 5))} ${Math.min(100, Math.floor(myCmds / 5))}%\n`;
+      /* ── PROFILE PANEL ── */
+      const lvl = Math.min(100, Math.floor(myCmds / 5));
+      txt += `┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n`;
+      txt += `┃  👤 *YOUR PROFILE*           ┃\n`;
+      txt += `┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━┫\n`;
+      txt += `┃  ▸ Rank  : *${userRank(myCmds)}*\n`;
+      txt += `┃  ▸ Used  : *${myCmds}* cmds\n`;
+      txt += `┃  ▸ Level : ${bar(lvl)} *${lvl}%*\n`;
       txt += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
 
+      /* ── CATEGORIES ── */
       const order = ['main','download','ai','sticker','stickers','games','fun','text','tools','search','media','utility','info','status','leaderboard','group','admin','settings','automation','owner','other'];
       const sorted = order.filter(c => cats[c]).concat(Object.keys(cats).filter(c => !order.includes(c)));
 
       for (const cat of sorted) {
         if (!cats[cat]) continue;
         const list = cats[cat].sort();
-        txt += `┏━「 📦 *${cat.toUpperCase()}* (${list.length}) 」\n`;
-        for (let i = 0; i < list.length; i += 2) {
-          const a = `▸ ${config.prefix}${list[i]}`;
-          const b = list[i + 1] ? `▸ ${config.prefix}${list[i + 1]}` : '';
-          txt += `┃ ${a.padEnd(18)}${b}\n`;
-        }
-        txt += `┗━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+        txt += catBlock(config.prefix, cat, list) + '\n\n';
       }
 
-      // ═══ GROUP LINK FOOTER ═══
+      /* ── FOOTER ── */
       txt += groupFooter();
-      txt += `\n\n_⚡ ${config.botName} · © 2026 ${config.ownerName || 'Warrior Felix'}_`;
+      txt += `\n\n╔══════════════════════════════════════╗\n`;
+      txt += `║  ⚡ *${config.botName}* · © 2026      ║\n`;
+      txt += `║  👑 ${config.ownerName || 'Warrior Felix'}\n`;
+      txt += `║  🇰🇪 Made in Kenya                   ║\n`;
+      txt += `╚══════════════════════════════════════╝`;
 
       await sendCard(sock, from, 'menu', txt, {
         externalAdReply: {
           title: `${config.botName} — Command Menu`,
-          body: `📢 Join our group · ${plugins.size} commands`,
+          body: `📢 Join group · ${plugins.size} commands`,
           thumbnailUrl: (IMAGES.alive[0]),
           sourceUrl: GROUP_LINK,
           mediaType: 1
@@ -238,7 +294,9 @@ module.exports = [
     }
   },
 
-  /* ============ ALIVE ============ */
+  /* ═══════════════════════════════════════════════════════════
+     🟢 ALIVE
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'alive',
     aliases: ['status'],
@@ -267,7 +325,7 @@ module.exports = [
 ┃ 💾 Memory   : *${memMB()} MB*
 ┃ 🖥️ Platform : *${os.platform()} ${os.arch()}*
 ┃ 🟢 Node     : *${process.version}*
-┃ 🌐 Host     : *${process.env.DYNO || process.env.RAILWAY_ENVIRONMENT || 'Local'}*
+┃ 🌐 Host     : *${process.env.DYNO || 'Local'}*
 ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 
 ┏━━━━━「 👤 YOU 」━━━━━┓
@@ -289,7 +347,9 @@ module.exports = [
     }
   },
 
-  /* ============ PING ============ */
+  /* ═══════════════════════════════════════════════════════════
+     🏓 PING
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'ping',
     aliases: ['latency', 'speed'],
@@ -314,7 +374,9 @@ module.exports = [
     }
   },
 
-  /* ============ UPTIME ============ */
+  /* ═══════════════════════════════════════════════════════════
+     ⏱️ UPTIME
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'uptime',
     aliases: ['up'],
@@ -360,7 +422,9 @@ module.exports = [
     }
   },
 
-  /* ============ REPO ============ */
+  /* ═══════════════════════════════════════════════════════════
+     📦 REPO
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'repo',
     aliases: ['github', 'source'],
@@ -406,7 +470,9 @@ _⚡ Tap the card to open GitHub_
     }
   },
 
-  /* ============ STAR ============ */
+  /* ═══════════════════════════════════════════════════════════
+     ⭐ STAR
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'star',
     description: 'Star the repo link',
@@ -417,7 +483,9 @@ _⚡ Tap the card to open GitHub_
     }
   },
 
-  /* ============ FORK ============ */
+  /* ═══════════════════════════════════════════════════════════
+     🍴 FORK
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'fork',
     description: 'Fork the repo link',
@@ -428,7 +496,9 @@ _⚡ Tap the card to open GitHub_
     }
   },
 
-  /* ============ ISSUES ============ */
+  /* ═══════════════════════════════════════════════════════════
+     🐛 ISSUES
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'issues',
     description: 'Report bugs',

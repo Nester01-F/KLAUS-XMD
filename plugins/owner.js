@@ -1,7 +1,27 @@
-
-
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const MAX_BROADCAST_CHARS = 2000;
+
+/* ── Inline helpers (no external import needed) ─────────────── */
+const BANNER = `
+╔══════════════════════════════════════╗
+║      👑 *KLAUS XMD DEVELOPER*        ║
+╚══════════════════════════════════════╝`;
+
+function panel(title, rows) {
+  const W = 36;
+  const head = `┏━「 ${title} 」`;
+  const out = [head];
+  for (const row of rows) {
+    if (Array.isArray(row)) {
+      const [k, v] = row;
+      out.push(`┃ ${k.padEnd(10)}: ${v}`);
+    } else {
+      out.push(`┃ ${row}`);
+    }
+  }
+  out.push('┗' + '━'.repeat(W));
+  return out.join('\n');
+}
 
 module.exports = [
   {
@@ -36,7 +56,6 @@ module.exports = [
         if (caption.length <= 1000) {
           await sock.sendMessage(from, { image: { url: config.images.dev }, caption }, { quoted: msg });
         } else {
-          // Long cards go as image + separate text so WhatsApp never cuts them off
           await sock.sendMessage(from, { image: { url: config.images.dev } }, { quoted: msg });
           await reply(caption);
         }
@@ -77,7 +96,7 @@ module.exports = [
         } catch {
           failed++;
         }
-        await sleep(2000 + Math.floor(Math.random() * 2000)); // pause between groups: sending in a burst risks a ban
+        await sleep(2000 + Math.floor(Math.random() * 2000));
       }
 
       await reply(panel('📢 BROADCAST DONE', [
@@ -95,8 +114,8 @@ module.exports = [
     async run({ reply, isOwner }) {
       if (!isOwner) return reply('❌ *Owner only command!*');
       await reply('♻️ Restarting... back in a few seconds.');
-      await sleep(1500); // let the message go out before the process ends
-      process.exit(1); // non-zero so crash-based auto-restart (panels) brings it back too
+      await sleep(1500);
+      process.exit(1);
     }
   }
 ];
