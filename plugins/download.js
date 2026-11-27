@@ -1,13 +1,13 @@
-
 const yts = require('yt-search');
 const axios = require('axios');
 
-const API = 'https://apix.wolvarex.com';
-const KEY = process.env.WOLVAREX_KEY || 'wxa_f_2fca8d14eb';
-const api = (path) => `${API}${path}${path.includes('?') ? '&' : '?'}key=${KEY}`;
+const API = 'https://prexzyapis.com';
+const api = (path) => `${API}${path}`;
 
 module.exports = [
-  /* ============ 🎬 YTMP4 ============ */
+  /* ═══════════════════════════════════════════════════════════
+     🎬 YTMP4
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'ytmp4',
     aliases: ['ytvideo'],
@@ -28,12 +28,13 @@ module.exports = [
       }, { quoted: msg });
 
       try {
+        const url = `https://youtube.com/watch?v=${id}`;
         const { data } = await axios.get(
-          api(`/api/music/ytmp4-download?id=${id}&quality=480&provider=ytmp4`),
+          api(`/download/ytmp4?url=${encodeURIComponent(url)}`),
           { timeout: 60000 }
         );
-        const videoUrl = data?.result?.download_url || data?.result?.url || data?.downloadURL || data?.url;
-        if (!videoUrl) throw new Error(data?.error || 'No video URL');
+        const videoUrl = data?.download_url || data?.url || data?.result?.url || data?.result?.download_url || data?.data?.url;
+        if (!videoUrl) throw new Error(data?.error || data?.message || 'No video URL');
 
         await sock.sendMessage(from, {
           video: { url: videoUrl },
@@ -46,7 +47,9 @@ module.exports = [
     }
   },
 
-  /* ============ 🎵 PLAY / YTMP3 ============ */
+  /* ═══════════════════════════════════════════════════════════
+     🎵 PLAY / YTMP3
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'play',
     aliases: ['ytmp3', 'song', 'audio'],
@@ -69,10 +72,10 @@ module.exports = [
 
       try {
         const { data } = await axios.get(
-          api(`/api/music/ytmp4-download?id=${info.videoId}&quality=audio&provider=ytmp4`),
+          api(`/download/ytmp3?url=${encodeURIComponent(info.url)}`),
           { timeout: 60000 }
         );
-        const audioUrl = data?.result?.download_url || data?.result?.url || data?.downloadURL || data?.url;
+        const audioUrl = data?.download_url || data?.url || data?.result?.url || data?.result?.download_url || data?.data?.url;
         if (!audioUrl) throw new Error(data?.error || 'No audio URL');
 
         await sock.sendMessage(from, {
@@ -86,7 +89,9 @@ module.exports = [
     }
   },
 
-  /* ============ 🎵 TIKTOK ============ */
+  /* ═══════════════════════════════════════════════════════════
+     🎵 TIKTOK
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'tiktok',
     aliases: ['tt'],
@@ -98,13 +103,13 @@ module.exports = [
       await reply('🎵 *Fetching TikTok...*');
       try {
         const { data } = await axios.get(
-          api(`/api/download/tiktok/savetik?url=${encodeURIComponent(text)}`),
+          api(`/download/tiktok?url=${encodeURIComponent(text)}`),
           { timeout: 30000 }
         );
 
-        const video = data?.result?.video || data?.result?.play || data?.video || data?.play || data?.result?.downloadURL;
-        const title = data?.result?.title || data?.title || 'TikTok';
-        const cover = data?.result?.cover || data?.result?.thumbnail || data?.cover;
+        const video = data?.video || data?.play || data?.url || data?.result?.video || data?.result?.play;
+        const title = data?.title || data?.result?.title || 'TikTok';
+        const cover = data?.cover || data?.thumbnail || data?.result?.cover;
 
         if (!video) throw new Error(data?.error || 'No video URL');
 
@@ -121,7 +126,40 @@ module.exports = [
     }
   },
 
-  /* ============ 🎧 SPOTIFY ============ */
+  /* ═══════════════════════════════════════════════════════════
+     📘 FACEBOOK
+     ═══════════════════════════════════════════════════════════ */
+  {
+    command: 'fb',
+    aliases: ['facebook'],
+    description: 'Download Facebook video',
+    category: 'download',
+    async run({ reply, text, sock, from, msg }) {
+      if (!text.includes('facebook.com')) return reply('📘 Send a Facebook link.');
+
+      await reply('📘 *Fetching Facebook video...*');
+      try {
+        const { data } = await axios.get(
+          api(`/download/facebook?url=${encodeURIComponent(text)}`),
+          { timeout: 30000 }
+        );
+
+        const video = data?.hd || data?.sd || data?.url || data?.video || data?.result?.hd || data?.result?.sd;
+        if (!video) throw new Error(data?.error || 'No video URL');
+
+        await sock.sendMessage(from, {
+          video: { url: video },
+          caption: `📘 KLAUS XMD`
+        }, { quoted: msg });
+      } catch (e) {
+        reply(`❌ Failed: ${e.message}`);
+      }
+    }
+  },
+
+  /* ═══════════════════════════════════════════════════════════
+     🎧 SPOTIFY
+     ═══════════════════════════════════════════════════════════ */
   {
     command: 'spotify',
     aliases: ['sp'],
@@ -130,17 +168,17 @@ module.exports = [
     async run({ reply, text, sock, from, msg }) {
       if (!text.includes('spotify.com')) return reply('🎧 Send a Spotify link.');
 
+      await reply('🎧 *Downloading from Spotify...*');
       try {
-        const trackName = text.split('/').pop().split('?')[0];
         const { data } = await axios.get(
-          api(`/api/spotify/download?url=${encodeURIComponent(text)}&q=${encodeURIComponent(trackName)}`),
+          api(`/download/spotify?url=${encodeURIComponent(text)}`),
           { timeout: 30000 }
         );
 
-        const audioUrl = data?.result?.download_url || data?.result?.url || data?.downloadURL || data?.url;
-        const title = data?.result?.title || data?.title || 'Spotify';
-        const artist = data?.result?.artist || data?.artist || '';
-        const thumb = data?.result?.thumbnail || data?.thumbnail;
+        const audioUrl = data?.download_url || data?.url || data?.result?.url || data?.data?.url;
+        const title = data?.title || data?.result?.title || 'Spotify Track';
+        const artist = data?.artist || data?.result?.artist || '';
+        const thumb = data?.thumbnail || data?.result?.thumbnail || data?.cover;
 
         if (!audioUrl) throw new Error(data?.error || 'No audio URL');
 
