@@ -1,10 +1,12 @@
 const { getBot, setBot } = require('../lib/database');
-const { startAutoBio, stopAutoBio } = require('../lib/automation');
+const { startAutoBio, stopAutoBio, startAlwaysOnline, stopAlwaysOnline } = require('../lib/automation');
 
 const DEFAULT_EMOJI = '❤️';
 const DEFAULT_POOL = ['❤️', '🔥', '💯', '😍', '👏'];
+const MAX_POOL = 20;
 
 const TOGGLES = {
+  alwaysonline:   { label: '🟢 Always Online', aliases: ['alwayson'] },
   autorejectcall: { label: '📞 Auto-Reject Calls', aliases: ['autoreject', 'rejectcall'] },
   autoview:       { label: '👁️ AutoView Status', aliases: ['autoviewstatus'] },
   autoreact:      { label: '❤️ AutoReact Commands', aliases: [] },
@@ -22,8 +24,16 @@ const parseMode = (v) => {
   return null;
 };
 
+// Splits "❤️🔥 💯" into ['❤️','🔥','💯'] (handles emojis typed without spaces) and drops non-emoji text
+const splitEmojis = (s = '') => {
+  const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+  return [...seg.segment(s)]
+    .map((x) => x.segment.trim())
+    .filter((x) => x && /\p{Extended_Pictographic}/u.test(x));
+};
+
 const getSafe = async () => {
-  const b = (await getBot()) || {};
+  const b = (await Promise.resolve(getBot())) || {};
   return {
     ...b,
     statusEmoji: b.statusEmoji || DEFAULT_EMOJI,
@@ -46,11 +56,16 @@ const builder = (key, { label, aliases }) => ({
     if (mode === null) return reply(`⚙️ Usage: .${key} on | off`);
 
     try {
-      await setBot({ [key]: mode });
+      await Promise.resolve(setBot({ [key]: mode }));
 
       if (key === 'autobio') {
         if (mode) await startAutoBio(sock);
         else stopAutoBio();
+      }
+
+      if (key === 'alwaysonline') {
+        if (mode) await startAlwaysOnline(sock);
+        else stopAlwaysOnline(sock, true); // also flips presence to offline
       }
 
       reply(`${label} is now *${mode ? 'ENABLED ✅' : 'DISABLED ❌'}*`);
@@ -75,8 +90,9 @@ module.exports = [
       if (!text?.trim()) {
         return reply(`😀 Current emoji: *${b.statusEmoji}*\nUsage: .statusemoji ❤️`);
       }
-      const emoji = text.trim().split(/\s+/)[0]; // WhatsApp reactions take a single emoji
-      await setBot({ statusEmoji: emoji });
+      const [emoji] = splitEmojis(text); // WhatsApp reactions take a single emoji
+      if (!emoji) return reply('❌ Send a valid emoji, e.g. *.statusemoji 🔥*');
+      await Promise.resolve(setBot({ statusEmoji: emoji }));
       reply(`✅ Status emoji set to *${emoji}*`);
     }
   },
@@ -91,8 +107,9 @@ module.exports = [
       if (!text?.trim()) {
         return reply(`🎨 Current pool: *${b.reactEmojis.join(' ')}*\nUsage: .reactemojis ❤️ 🔥 💯`);
       }
-      const emojis = text.split(/\s+/).filter(Boolean);
-      await setBot({ reactEmojis: emojis });
+      const emojis = splitEmojis(text).slice(0, MAX_POOL);
+      if (!emojis.length) return reply('❌ Send at least one valid emoji, e.g. *.reactemojis ❤️ 🔥 💯*');
+      await Promise.resolve(setBot({ reactEmojis: emojis }));
       reply(`✅ React emoji pool set to: ${emojis.join(' ')}`);
     }
   },
@@ -117,6 +134,7 @@ module.exports = [
       reply(
 `🤖 *AUTOMATION SETTINGS*
 ━━━━━━━━━━━━━━━━
+🟢 AlwaysOnline   : *${flag(b.alwaysonline)}*
 📞 AutoRejectCall : *${flag(b.autorejectcall)}*
 👁️ AutoView       : *${flag(b.autoview)}*
 ❤️ AutoReact      : *${flag(b.autoreact)}*
@@ -128,7 +146,7 @@ module.exports = [
 😀 StatusEmoji    : *${b.statusEmoji}*
 🎨 React pool     : *${b.reactEmojis.join(' ')}*
 
-💡 Toggle with: *.autoview on/off* etc.`
+💡 Toggle with: *.alwaysonline on/off* etc.`
       );
     }
   }
