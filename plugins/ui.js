@@ -2,6 +2,7 @@ const { getDB, getLeaderboard } = require('../lib/database');
 const os = require('os');
 
 const GROUP_LINK = 'https://chat.whatsapp.com/GMXcHGCsLEeKPTyHLr4SaG';
+const DEFAULT_REPO = 'https://github.com/Nester01-F/KLAUS-XMD';
 
 const IMAGES = {
   menu:  ['https://files.catbox.moe/lusgnl.jpg'],
@@ -9,13 +10,13 @@ const IMAGES = {
   repo:  ['https://files.catbox.moe/maj8xu.jpg']
 };
 
+/* ── Helpers ────────────────────────────────────────────────── */
 function fmtUptime(ms) {
   const s = Math.floor(ms / 1000);
   const d = Math.floor(s / 86400);
   const h = Math.floor((s % 86400) / 3600);
   const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${d}d ${h}h ${m}m ${sec}s`;
+  return d ? `${d}d ${h}h ${m}m` : h ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
 }
 
 function userRank(n) {
@@ -33,14 +34,11 @@ function getMem() {
   return `${used}/${total}MB`;
 }
 
-function getTimeInfo() {
-  const now = new Date();
-  return {
-    time: now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-    day: now.toLocaleDateString('en-GB', { weekday: 'long' }),
-    date: now.toLocaleDateString('en-GB'),
-  };
-}
+const chunk = (arr, n) => {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+};
 
 async function fetchFirst(urls, t = 8000) {
   for (const u of urls) {
@@ -65,30 +63,26 @@ async function send(sock, from, key, caption) {
   await sock.sendMessage(from, { text: caption });
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   CYBER X THEME
-   ═══════════════════════════════════════════════════════════════ */
-const THEME = {
-  header: (name) => `◢◤━━━━━ ${name.toUpperCase()} ━━━━━◥◣`,
-  subheader: (name) => `   ▸ ${name}`,
-  section: (name, count) => `◢◤ ${name} ◥◣ ── [${count}]`,
-  kv: (k, v) => `  ◈ ${k.padEnd(10)} ${v}`,
-  cmd: (c) => `  » ${c}`,
-  footer: () => `◢◤━━━━━━━━━━━━━━━━━━━━━━━━━◥◣`,
-  bullet: '▸',
-  join: '◢◤ JOIN US ◥◣',
-};
-
+/* ── Theme ──────────────────────────────────────────────────── */
 const CAT_ORDER = ['main','download','ai','sticker','stickers','games','fun','text','tools','search','media','utility','info','status','leaderboard','group','admin','settings','automation','owner','sports','other'];
 
 const CAT_LABEL = {
-  main:'MAIN', download:'DOWNLOADERS', ai:'AI TOOLS', sticker:'STICKER',
-  stickers:'STICKER PACKS', games:'GAMES', fun:'FUN', text:'TEXT TOOLS',
-  tools:'TOOLS', search:'SEARCH', media:'MEDIA', utility:'UTILITY',
-  info:'INFO', status:'STATUS', leaderboard:'LEADERBOARD',
-  group:'GROUP', admin:'ADMIN', settings:'SETTINGS', automation:'AUTO',
-  owner:'OWNER', sports:'SPORTS', other:'OTHER'
+  main: '🏠 MAIN', download: '📥 DOWNLOADERS', ai: '🧠 AI TOOLS', sticker: '🎴 STICKER',
+  stickers: '🎴 STICKER PACKS', games: '🎮 GAMES', fun: '🎉 FUN', text: '🔤 TEXT',
+  tools: '🛠️ TOOLS', search: '🔎 SEARCH', media: '🎞️ MEDIA', utility: '🧰 UTILITY',
+  info: 'ℹ️ INFO', status: '📡 STATUS', leaderboard: '🏆 LEADERBOARD',
+  group: '👥 GROUP', admin: '🛡️ ADMIN', settings: '⚙️ SETTINGS', automation: '🤖 AUTO',
+  owner: '👑 OWNER', sports: '⚽ SPORTS', other: '📦 OTHER'
 };
+
+const labelOf = (c) => CAT_LABEL[c] || `📦 ${c.toUpperCase()}`;
+
+const block = (title, lines) =>
+  `╭─〔 ${title} 〕\n${lines.map((l) => `│ ${l}`).join('\n')}\n╰──────────────`;
+
+// Commands in compact rows of 4: .play · .ytmp4 · .tiktok · .fb
+const cmdRows = (prefix, list) =>
+  chunk(list.map((c) => `${prefix}${c}`), 4).map((row) => row.join(' · '));
 
 module.exports = [
   {
@@ -97,6 +91,10 @@ module.exports = [
     description: 'Show command menu',
     category: 'main',
     async run({ sock, from, sender, text, reply, config, plugins }) {
+      const prefix = config.prefix || '.';
+      const botName = (config.botName || 'KLAUS XMD').toUpperCase();
+      const ownerName = config.ownerName || 'Warrior Felix';
+
       const cats = {};
       for (const [n, p] of plugins) {
         if (n === 'menu') continue;
@@ -104,83 +102,42 @@ module.exports = [
         (cats[c] = cats[c] || []).push(n);
       }
 
-      /* Drill-down */
-      if (text) {
+      /* Drill-down: .menu download */
+      if (text?.trim()) {
         const cat = text.trim().toLowerCase();
         const list = (cats[cat] || []).sort();
-        if (!list.length) return reply(`◢◤ UNKNOWN: ${cat} ◥◣\n\nAvailable:\n${Object.keys(cats).sort().join('\n')}`);
-        const label = CAT_LABEL[cat] || cat.toUpperCase();
-        let t = `${THEME.header(label)}\n\n`;
-        for (const c of list) {
-          t += `${THEME.cmd('.' + c)}\n`;
+        if (!list.length) {
+          return reply(`❌ Unknown category: *${cat}*\n\n${Object.keys(cats).sort().join(' · ')}`);
         }
-        t += `\n${THEME.footer()}\n${GROUP_LINK}`;
+        const t = `${block(`${labelOf(cat)} · ${list.length}`, cmdRows(prefix, list))}\n\n🔗 ${GROUP_LINK}`;
         return send(sock, from, 'menu', t);
       }
 
       /* Full menu */
       const db = getDB();
       const lb = getLeaderboard();
-      const myCmds = lb.commands[sender] || 0;
+      const myCmds = lb?.commands?.[sender] || 0;
       const uptime = fmtUptime(Date.now() - db.stats.startedAt);
-      const { time, day, date } = getTimeInfo();
-      const mem = getMem();
-      const ownerName = config.ownerName || 'Warrior Felix';
-      const botName = config.botName || 'KLAUS XMD';
 
-      let t = '';
+      const header = [
+        `╭━━━〔 ⚡ ${botName} ⚡ 〕━━━╮`,
+        `┃ 👑 ${ownerName}  ·  Prefix ${prefix}  ·  v1.0.0`,
+        `┃ ⏱️ ${uptime}  ·  💾 ${getMem()}  ·  🔌 ${plugins.size} cmds`,
+        `┃ 🏅 ${userRank(myCmds)}  ·  ${myCmds} used`,
+        `╰━━━━━━━━━━━━━━━━━━━━━━━╯`
+      ].join('\n');
 
-      // ═══ HEADER ═══
-      t += `◢◤━━━━━━━━━━━━━━━━━━━━━━━━━━━◥◣\n`;
-      t += `◢◤  ${botName.toUpperCase()}  ◥◣\n`;
-      t += `◢◤━━━━━━━━━━━━━━━━━━━━━━━━━━━◥◣\n\n`;
+      const sorted = CAT_ORDER.filter((c) => cats[c])
+        .concat(Object.keys(cats).filter((c) => !CAT_ORDER.includes(c)));
 
-      // ═══ INFO PANEL ═══
-      t += `┌───────────────────────────────┐\n`;
-      t += THEME.kv('Prefix', config.prefix) + '\n';
-      t += THEME.kv('User', ownerName) + '\n';
-      t += THEME.kv('Mode', 'PUBLIC') + '\n';
-      t += THEME.kv('Time', time) + '\n';
-      t += THEME.kv('Day', day) + '\n';
-      t += THEME.kv('Date', date) + '\n';
-      t += THEME.kv('Version', '1.0.0') + '\n';
-      t += THEME.kv('Plugins', plugins.size) + '\n';
-      t += THEME.kv('RAM', mem) + '\n';
-      t += THEME.kv('Uptime', uptime) + '\n';
-      t += THEME.kv('Platform', os.platform()) + '\n';
-      t += `└───────────────────────────────┘\n\n`;
-
-      // ═══ PROFILE ═══
-      t += `◢◤ ${THEME.bullet} YOUR PROFILE ◥◣\n`;
-      t += `  ◈ Rank      ${userRank(myCmds)}\n`;
-      t += `  ◈ Used      ${myCmds} commands\n`;
-      t += `  ◈ Level     ${Math.min(100, Math.floor(myCmds / 5))}%\n\n`;
-
-      // ═══ CATEGORIES ═══
-      const sorted = CAT_ORDER.filter(c => cats[c]).concat(Object.keys(cats).filter(c => !CAT_ORDER.includes(c)));
-
-      for (const cat of sorted) {
-        if (!cats[cat]) continue;
+      const sections = sorted.map((cat) => {
         const list = cats[cat].sort();
-        const label = CAT_LABEL[cat] || cat.toUpperCase();
+        return block(`${labelOf(cat)} · ${list.length}`, cmdRows(prefix, list));
+      });
 
-        t += `╔═══════════════════════════════╗\n`;
-        t += `║ ${label.padEnd(29)} ║\n`;
-        t += `╚═══════════════════════════════╝\n`;
-        for (const c of list) {
-          t += `  » ${c}\n`;
-        }
-        t += '\n';
-      }
+      const footer = `💡 *${prefix}menu <category>* for one section\n🔗 ${GROUP_LINK}`;
 
-      // ═══ FOOTER ═══
-      t += `◢◤━━━━━━━━━━━━━━━━━━━━━━━━━━━◥◣\n`;
-      t += `◢◤  JOIN OUR COMMUNITY  ◥◣\n`;
-      t += `◢◤━━━━━━━━━━━━━━━━━━━━━━━━━━━◥◣\n`;
-      t += `${GROUP_LINK}\n\n`;
-      t += `_${botName} · ${ownerName} · Kenya_`;
-
-      await send(sock, from, 'menu', t);
+      await send(sock, from, 'menu', `${header}\n\n${sections.join('\n\n')}\n\n${footer}`);
     }
   },
 
@@ -192,29 +149,16 @@ module.exports = [
     async run({ sock, from, config, plugins, sender }) {
       const db = getDB();
       const lb = getLeaderboard();
-      const myCmds = lb.commands[sender] || 0;
-      const uptime = fmtUptime(Date.now() - db.stats.startedAt);
+      const myCmds = lb?.commands?.[sender] || 0;
+      const botName = (config.botName || 'KLAUS XMD').toUpperCase();
 
       const t =
-`◢◤━━━━━━━━━━━━━━━━━━━━━━━━━━━◥◣
-◢◤  ${config.botName.toUpperCase()}  ◥◣
-◢◤  SYSTEM ONLINE  ◥◣
-◢◤━━━━━━━━━━━━━━━━━━━━━━━━━━━◥◣
-
-┌───────────────────────────────┐
-  ◈ State       ONLINE
-  ◈ Uptime      ${uptime}
-  ◈ Commands    ${plugins.size}
-  ◈ Prefix      ${config.prefix}
-  ◈ Memory      ${getMem()}
-  ◈ Platform    ${os.platform()}
-  ◈ Node        ${process.version}
-└───────────────────────────────┘
-
-◢◤ YOUR STATS ◥◣
-  ◈ Rank        ${userRank(myCmds)}
-  ◈ Used        ${myCmds} commands
-
+`╭━━━〔 ⚡ ${botName} ⚡ 〕━━━╮
+┃ 🟢 ONLINE  ·  ⏱️ ${fmtUptime(Date.now() - db.stats.startedAt)}
+┃ 🔌 ${plugins.size} cmds  ·  Prefix ${config.prefix || '.'}
+┃ 💾 ${getMem()}  ·  ${os.platform()}  ·  ${process.version}
+┃ 🏅 ${userRank(myCmds)}  ·  ${myCmds} used
+╰━━━━━━━━━━━━━━━━━━━━━━━╯
 _${config.ownerName || 'Warrior Felix'}_`;
 
       await send(sock, from, 'alive', t);
@@ -228,16 +172,10 @@ _${config.ownerName || 'Warrior Felix'}_`;
     category: 'main',
     async run({ reply }) {
       const start = Date.now();
-      await reply('◢◤ Ping... ◥◣');
+      await reply('🏓 Pinging...');
       const ms = Date.now() - start;
       const quality = ms < 100 ? 'EXCELLENT' : ms < 300 ? 'GOOD' : ms < 800 ? 'FAIR' : 'SLOW';
-
-      reply(
-`◢◤━━━━━━━━━━━━━━━━━━━━◥◣
-  ◈ PONG  ${ms}ms
-  ◈ QUALITY  ${quality}
-◢◤━━━━━━━━━━━━━━━━━━━━◥◣`
-      );
+      reply(`🏓 *PONG* ${ms}ms  ·  ${quality}`);
     }
   },
 
@@ -247,23 +185,7 @@ _${config.ownerName || 'Warrior Felix'}_`;
     category: 'main',
     async run({ sock, from, config }) {
       const db = getDB();
-      const ms = Date.now() - db.stats.startedAt;
-      const s = Math.floor(ms / 1000);
-      const d = Math.floor(s / 86400);
-      const h = Math.floor((s % 86400) / 3600);
-      const m = Math.floor((s % 3600) / 60);
-      const sec = s % 60;
-
-      const t =
-`◢◤  UPTIME  ◥◣
-
-  ◈ Days        ${d}
-  ◈ Hours       ${h}
-  ◈ Minutes     ${m}
-  ◈ Seconds     ${sec}
-
-_${config.botName}_`;
-
+      const t = `⏱️ *UPTIME*  ${fmtUptime(Date.now() - db.stats.startedAt)}\n_${config.botName || 'KLAUS XMD'}_`;
       await send(sock, from, 'alive', t);
     }
   },
@@ -274,16 +196,13 @@ _${config.botName}_`;
     description: 'Repository',
     category: 'main',
     async run({ sock, from, config }) {
-      const repo = config.repo || 'https://github.com/Nester01-F/KLAUS-XMD';
-
+      const repo = config.repo || DEFAULT_REPO;
+      const p = config.prefix || '.';
       const t =
-`◢◤  REPOSITORY  ◥◣
-
-  ◈ Repo  ${repo}
-  ◈ Star  .star
-  ◈ Fork  .fork
-  ◈ Bugs  .issues
-
+`╭─〔 📦 REPOSITORY 〕
+│ 🔗 ${repo}
+│ ⭐ ${p}star · 🍴 ${p}fork · 🐞 ${p}issues
+╰──────────────
 _${config.ownerName || 'Warrior Felix'}_`;
 
       await send(sock, from, 'repo', t);
@@ -292,20 +211,17 @@ _${config.ownerName || 'Warrior Felix'}_`;
 
   { command: 'star', category: 'main', description: 'Star repo',
     async run({ reply, config }) {
-      const r = config.repo || 'https://github.com/Nester01-F/KLAUS-XMD';
-      reply(`◢◤  STAR REPO  ◥◣\n\n${r}/stargazers`);
+      reply(`⭐ *STAR THE REPO*\n${(config.repo || DEFAULT_REPO)}/stargazers`);
     }
   },
   { command: 'fork', category: 'main', description: 'Fork repo',
     async run({ reply, config }) {
-      const r = config.repo || 'https://github.com/Nester01-F/KLAUS-XMD';
-      reply(`◢◤  FORK REPO  ◥◣\n\n${r}/fork`);
+      reply(`🍴 *FORK THE REPO*\n${(config.repo || DEFAULT_REPO)}/fork`);
     }
   },
   { command: 'issues', category: 'main', description: 'Report bugs',
     async run({ reply, config }) {
-      const r = config.repo || 'https://github.com/Nester01-F/KLAUS-XMD';
-      reply(`◢◤  REPORT ISSUES  ◥◣\n\n${r}/issues/new`);
+      reply(`🐞 *REPORT AN ISSUE*\n${(config.repo || DEFAULT_REPO)}/issues/new`);
     }
   }
 ];
