@@ -1,6 +1,9 @@
 const yts = require('yt-search');
 const axios = require('axios');
 const { execFile } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const API = 'https://prexzyapis.com';
 const API_KEY = process.env.PREXZY_APIKEY || ''; // only if the provider gives you a key
@@ -73,23 +76,114 @@ async function runStages(stages, minSize = 10000) {
 }
 
 /* ── Local downloaders (run from the bot's own IP) ──────────── */
-function viaYtDlp(url, kind) {
-  const args = kind === 'audio'
-    ? ['-f', 'bestaudio[ext=m4a]/bestaudio', '--no-playlist', '-o', '-', url]
-    : ['-f', 'best[ext=mp4][height<=720]/best[ext=mp4]/best', '--no-playlist', '-o', '-', url];
+const BIN_DIR = path.join(__dirname, '..', 'bin');
 
-  return new Promise((resolve, reject) => {
-    execFile('yt-dlp', args, { encoding: 'buffer', maxBuffer: MAX_BYTES, timeout: 180000 }, (err, stdout, stderr) => {
-      if (err) return reject(new Error(`yt-dlp: ${(stderr?.toString() || err.message).trim().slice(-150)}`));
-      resolve(Buffer.from(stdout));
-    });
+const run = (cmd, args, opts = {}) =>
+  new Promise((resolve, reject) => {
+    execFile(cmd, args, { encoding: 'utf8', timeout: 20000, ...opts }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout));
   });
+
+// Standalone yt-dlp builds (no Python needed)
+const YTDLP_ASSET = (() => {
+  const { platform, arch } = process;
+  if (platform === 'win32') return 'yt-dlp.exe';
+  if (platform === 'darwin') return 'yt-dlp_macos';
+  if (platform === 'linux') return arch === 'arm64' ? 'yt-dlp_linux_aarch64' : 'yt-dlp_linux';
+  return null;
+})();
+
+let ytDlpPromise = null;
+let ytDlpFailedAt = 0;
+
+/* Finds yt-dlp (YTDLP_PATH, PATH, ./bin) or downloads the standalone binary into ./bin once */
+function ensureYtDlp() {
+  if (Date.now() - ytDlpFailedAt < 10 * 60 * 1000) {
+    return Promise.reject(new Error('yt-dlp unavailable (install failed recently, retrying in a few minutes)'));
+  }
+  if (!ytDlpPromise) {
+    ytDlpPromise = (async () => {
+      const local = path.join(BIN_DIR, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+      for (const c of [process.env.YTDLP_PATH, 'yt-dlp', local].filter(Boolean)) {
+        try { await run(c, ['--version']); return c; } catch {}
+      }
+      if (!YTDLP_ASSET) throw new Error(`no standalone build for ${process.platform}/${process.arch}`);
+
+      fs.mkdirSync(BIN_DIR, { recursive: true });
+      const res = await axios.get(
+        `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${YTDLP_ASSET}`,
+        { responseType: 'arraybuffer', timeout: 180000, maxContentLength: 200 * 1024 * 1024, headers: { 'User-Agent': UA } }
+      );
+      const tmp = `${local}.download`;
+      fs.writeFileSync(tmp, Buffer.from(res.data));
+      fs.chmodSync(tmp, 0o755);
+      fs.renameSync(tmp, local);
+      await run(local, ['--version']); // sanity check that it actually runs here
+      return local;
+    })().catch((e) => {
+      ytDlpPromise = null;
+      ytDlpFailedAt = Date.now();
+      throw new Error(`yt-dlp unavailable (${e.message})`);
+    });
+  }
+  return ytDlpPromise;
+}
+
+let ffmpegPromise = null;
+const hasFfmpeg = () => (ffmpegPromise ||= run('ffmpeg', ['-version']).then(() => true, () => false));
+
+async function viaYtDlp(url, kind) {
+  const bin = await ensureYtDlp();
+  const ffmpeg = await hasFfmpeg();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'klaus-dl-'));
+
+  // Without ffmpeg we can only take single-file formats (video+audio already together)
+  const format = kind === 'audio'
+    ? 'ba[ext=m4a]/ba/b'
+    : ffmpeg
+      ? 'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4][height<=720]/bv*[height<=720]+ba/b'
+      : 'b[ext=mp4][height<=720]/b[ext=mp4]/b';
+
+  const base = [
+    '-f', format, '--no-playlist', '--no-warnings', '--max-filesize', '100M',
+    ...(kind === 'video' && ffmpeg ? ['--merge-output-format', 'mp4'] : []),
+    '-o', path.join(dir, 'out.%(ext)s')
+  ];
+  // Current yt-dlp needs a JS runtime for YouTube; this bot already has Node
+  const withJs = [...base, '--js-runtimes', `node:${process.execPath}`, url];
+  const withoutJs = [...base, url];
+  const opts = { timeout: 180000, maxBuffer: 10 * 1024 * 1024 };
+
+  try {
+    try {
+      await run(bin, withJs, opts);
+    } catch (e) {
+      // very old yt-dlp doesn't know --js-runtimes
+      if (/no such option/i.test(String(e.stderr || e.message))) await run(bin, withoutJs, opts);
+      else throw e;
+    }
+
+    const files = fs.readdirSync(dir)
+      .filter((f) => !/\.(part|ytdl|temp)$/.test(f))
+      .map((f) => path.join(dir, f))
+      .sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
+    if (!files.length) throw new Error('no output file');
+    return fs.readFileSync(files[0]);
+  } catch (e) {
+    const msg = String(e.stderr || e.message).trim().split('\n').slice(-2).join(' ').slice(-220);
+    throw new Error(`yt-dlp: ${msg}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 async function viaYtdlCore(url, kind) {
-  let ytdl;
-  try { ytdl = require('@distube/ytdl-core'); }
+  let mod;
+  try { mod = require('@distube/ytdl-core'); }
   catch { throw new Error('ytdl-core: not installed'); }
+  // Different versions export the function differently
+  const ytdl = typeof mod === 'function' ? mod : (mod.default || mod.ytdl);
+  if (typeof ytdl !== 'function') throw new Error('ytdl-core: unsupported export, update or remove the package');
 
   const stream = ytdl(url, kind === 'audio'
     ? { filter: 'audioonly', quality: 'highestaudio' }
@@ -105,16 +199,17 @@ async function viaYtdlCore(url, kind) {
   return Buffer.concat(chunks);
 }
 
-/* ── YouTube: API → yt-dlp → ytdl-core ──────────────────────── */
+/* ── YouTube: yt-dlp → API → ytdl-core ──────────────────────── */
+// yt-dlp goes first: the API's googlevideo links are tied to the API server's IP, so downloading them from here 403s
 async function getYouTubeMedia(url, kind) {
   const { buf } = await runStages([
+    () => viaYtDlp(url, kind),
     async () => {
       const data = await apiGet(`/download/${kind === 'audio' ? 'ytmp3' : 'ytmp4'}?url=${encodeURIComponent(url)}`);
       const mediaUrl = pickUrl(data);
       if (!mediaUrl) throw new Error(`API: no URL (${data?.error || 'empty response'})`);
       return downloadBuffer(mediaUrl, 120000);
     },
-    () => viaYtDlp(url, kind),
     () => viaYtdlCore(url, kind)
   ], kind === 'audio' ? 5000 : 10000);
   return buf;
