@@ -75,6 +75,24 @@ async function runStages(stages, minSize = 10000) {
   throw new Error(errors.join(' | '));
 }
 
+// What the user sees in chat (full details are in the console log)
+function failText(e) {
+  if (/bot-check/.test(e.message)) {
+    return '❌ YouTube is blocking this bot\'s server right now. The owner needs to add cookies or a proxy (see the logs).';
+  }
+  return `❌ Failed: ${e.message.slice(0, 300)}`;
+}
+
+// "Faded (Official Video) [HD]" -> "Faded"
+const cleanTitle = (t = '') => t.replace(/[\(\[][^)\]]*[\)\]]/g, ' ').replace(/\s+/g, ' ').trim() || t;
+
+// Pick a WhatsApp-friendly mimetype from the file's first bytes
+function sniffAudioMime(buf) {
+  if (buf.slice(0, 3).toString() === 'ID3' || (buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0)) return 'audio/mpeg';
+  if (buf.slice(0, 4).toString() === 'OggS') return 'audio/ogg; codecs=opus';
+  return 'audio/mp4';
+}
+
 /* ── Local downloaders (run from the bot's own IP) ──────────── */
 const BIN_DIR = path.join(__dirname, '..', 'bin');
 
@@ -149,6 +167,20 @@ async function viaYtDlp(url, kind) {
     ...(kind === 'video' && ffmpeg ? ['--merge-output-format', 'mp4'] : []),
     '-o', path.join(dir, 'out.%(ext)s')
   ];
+  // Optional: YouTube cookies (logged-in session), a proxy, or extra yt-dlp flags
+  const cookieFile = [process.env.YTDLP_COOKIES, path.join(__dirname, '..', 'cookies.txt')]
+    .filter(Boolean).find((f) => fs.existsSync(f));
+  const cookieB64 = process.env.YTDLP_COOKIES_B64; // for hosts where you can't upload files
+  const haveCookies = !!(cookieB64 || cookieFile);
+  if (haveCookies) {
+    const copy = path.join(dir, 'cookies.txt'); // yt-dlp rewrites its cookie file, so give it a throwaway copy
+    if (cookieB64) fs.writeFileSync(copy, Buffer.from(cookieB64, 'base64'));
+    else fs.copyFileSync(cookieFile, copy);
+    base.push('--cookies', copy);
+  }
+  if (process.env.YTDLP_PROXY) base.push('--proxy', process.env.YTDLP_PROXY);
+  if (process.env.YTDLP_ARGS) base.push(...process.env.YTDLP_ARGS.split(/\s+/).filter(Boolean));
+
   // Current yt-dlp needs a JS runtime for YouTube; this bot already has Node
   const withJs = [...base, '--js-runtimes', `node:${process.execPath}`, url];
   const withoutJs = [...base, url];
@@ -164,14 +196,18 @@ async function viaYtDlp(url, kind) {
     }
 
     const files = fs.readdirSync(dir)
-      .filter((f) => !/\.(part|ytdl|temp)$/.test(f))
+      .filter((f) => f !== 'cookies.txt' && !/\.(part|ytdl|temp)$/.test(f))
       .map((f) => path.join(dir, f))
       .sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
     if (!files.length) throw new Error('no output file');
     return fs.readFileSync(files[0]);
   } catch (e) {
-    const msg = String(e.stderr || e.message).trim().split('\n').slice(-2).join(' ').slice(-220);
-    throw new Error(`yt-dlp: ${msg}`);
+    const raw = String(e.stderr || e.message);
+    if (/confirm you.?re not a bot|sign in to confirm/i.test(raw)) {
+      throw new Error(`yt-dlp: bot-check, YouTube blocked this server's IP${haveCookies ? ' (cookies may be expired)' : ' (needs cookies.txt or a proxy)'}`);
+    }
+    const errLine = raw.split('\n').find((l) => /^ERROR/i.test(l.trim())) || raw.trim().split('\n').slice(-2).join(' ');
+    throw new Error(`yt-dlp: ${errLine.trim().slice(0, 220)}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -183,7 +219,7 @@ async function viaYtdlCore(url, kind) {
   catch { throw new Error('ytdl-core: not installed'); }
   // Different versions export the function differently
   const ytdl = typeof mod === 'function' ? mod : (mod.default || mod.ytdl);
-  if (typeof ytdl !== 'function') throw new Error('ytdl-core: unsupported export, update or remove the package');
+  if (typeof ytdl !== 'function') throw new Error(`ytdl-core: unsupported export (${Object.keys(mod || {}).slice(0, 5).join(',') || typeof mod}); remove the package`);
 
   const stream = ytdl(url, kind === 'audio'
     ? { filter: 'audioonly', quality: 'highestaudio' }
@@ -199,20 +235,27 @@ async function viaYtdlCore(url, kind) {
   return Buffer.concat(chunks);
 }
 
-/* ── YouTube: yt-dlp → API → ytdl-core ──────────────────────── */
-// yt-dlp goes first: the API's googlevideo links are tied to the API server's IP, so downloading them from here 403s
-async function getYouTubeMedia(url, kind) {
-  const { buf } = await runStages([
+/* ── YouTube: yt-dlp → API → SoundCloud (audio only) → ytdl-core ── */
+// yt-dlp goes first: the API's googlevideo links are tied to the API server's IP, so downloading them from here 403s.
+// If YouTube blocks this server (bot-check), audio requests fall back to a SoundCloud search of the same title.
+async function getYouTubeMedia(url, kind, query) {
+  const stages = [
     () => viaYtDlp(url, kind),
     async () => {
       const data = await apiGet(`/download/${kind === 'audio' ? 'ytmp3' : 'ytmp4'}?url=${encodeURIComponent(url)}`);
       const mediaUrl = pickUrl(data);
       if (!mediaUrl) throw new Error(`API: no URL (${data?.error || 'empty response'})`);
       return downloadBuffer(mediaUrl, 120000);
-    },
-    () => viaYtdlCore(url, kind)
-  ], kind === 'audio' ? 5000 : 10000);
-  return buf;
+    }
+  ];
+  if (kind === 'audio' && query) {
+    stages.push(async () => ({
+      buf: await viaYtDlp(`scsearch1:${cleanTitle(query)}`, 'audio'),
+      source: 'soundcloud'
+    }));
+  }
+  stages.push(() => viaYtdlCore(url, kind));
+  return runStages(stages, kind === 'audio' ? 5000 : 10000); // -> { buf, source? }
 }
 
 /* ── TikTok: API → tikwm → yt-dlp ───────────────────────────── */
@@ -274,7 +317,7 @@ async function getSpotify(url) {
       if (!videos?.[0]) throw new Error('no YouTube match');
       meta.title = o.title;
       meta.thumb = o.thumbnail_url;
-      return getYouTubeMedia(videos[0].url, 'audio');
+      return (await getYouTubeMedia(videos[0].url, 'audio', o.title)).buf;
     }
   ], 5000);
   return { buf, ...meta };
@@ -300,7 +343,7 @@ module.exports = [
         `🎬 *${info.title}*\n⏱️ ${info.timestamp}\n\n_Downloading video..._`, msg);
 
       try {
-        const buf = await getYouTubeMedia(`https://youtube.com/watch?v=${id}`, 'video');
+        const { buf } = await getYouTubeMedia(`https://youtube.com/watch?v=${id}`, 'video');
         await sock.sendMessage(from, {
           video: buf,
           caption: `✅ *${info.title}*\n\n> KLAUS XMD`,
@@ -308,7 +351,7 @@ module.exports = [
         }, { quoted: msg });
       } catch (e) {
         console.error('[ytmp4]', e.message);
-        reply(`❌ Failed: ${e.message}`);
+        reply(failText(e));
       }
     }
   },
@@ -333,15 +376,18 @@ module.exports = [
         `🎧 *${info.title}*\n⏱️ ${info.timestamp}\n👤 ${info.author.name}\n\n_Downloading audio..._`, msg);
 
       try {
-        const buf = await getYouTubeMedia(info.url, 'audio');
+        const { buf, source } = await getYouTubeMedia(info.url, 'audio', info.title);
+        if (source === 'soundcloud') {
+          await reply('ℹ️ YouTube is blocking this server, so this is the SoundCloud version of the song.');
+        }
         await sock.sendMessage(from, {
           audio: buf,
-          mimetype: 'audio/mp4',
+          mimetype: sniffAudioMime(buf),
           fileName: `${info.title}.mp3`
         }, { quoted: msg });
       } catch (e) {
         console.error('[play]', e.message);
-        reply(`❌ Failed: ${e.message}`);
+        reply(failText(e));
       }
     }
   },
@@ -367,7 +413,7 @@ module.exports = [
         }, { quoted: msg });
       } catch (e) {
         console.error('[tiktok]', e.message);
-        reply(`❌ Failed: ${e.message}`);
+        reply(failText(e));
       }
     }
   },
@@ -391,7 +437,7 @@ module.exports = [
         }, { quoted: msg });
       } catch (e) {
         console.error('[fb]', e.message);
-        reply(`❌ Failed: ${e.message}`);
+        reply(failText(e));
       }
     }
   },
@@ -413,12 +459,12 @@ module.exports = [
           `🎧 *${title}*${r.artist ? `\n👤 ${r.artist}` : ''}`, msg);
         await sock.sendMessage(from, {
           audio: r.buf,
-          mimetype: 'audio/mp4',
+          mimetype: sniffAudioMime(r.buf),
           fileName: `${title}.mp3`
         }, { quoted: msg });
       } catch (e) {
         console.error('[spotify]', e.message);
-        reply(`❌ Failed: ${e.message}`);
+        reply(failText(e));
       }
     }
   }
